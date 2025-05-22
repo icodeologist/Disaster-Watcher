@@ -3,15 +3,38 @@ package routes
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/icodeologist/disasterwatch/controllers"
+	"github.com/icodeologist/disasterwatch/handlers"
+	"github.com/icodeologist/disasterwatch/middlewares"
 )
 
 var c *gin.Context
 
 func SetUpRoutes(router *gin.Engine) {
+	router.Static("/static", "./static")
 
-	router.POST("/api/create", controllers.CreateReport)
+	// Load HTML templates from templates folder
+	router.LoadHTMLGlob("templates/*")
 	router.GET("/report/:id", controllers.GetReportById)
-	router.GET("/report/all", controllers.GetAllReport)
+	router.POST("/res", controllers.SearchPlaces)
+	router.GET("/", controllers.DisplayMap)
 	router.DELETE("/delete/:id", controllers.DeleteReportById)
+
+	// get all reports
+	router.GET("/reports/all", controllers.GetAllReports)
+	//get nearby reports
+	router.GET("/reports/nearby", controllers.GetNearByReports)
+
+	//auth section
+	router.POST("auth/register", handlers.Register)
+	router.POST("auth/login", handlers.Login)
+	router.GET("user/profile", middlewares.CheckAuth, controllers.GetUserProfile)
+
+	//applying middlewares
+	authRoutes := router.Group("/user")
+	authRoutes.Use(middlewares.CheckAuth)
+	{
+		authRoutes.POST("/api/report", controllers.CreateReport)
+		authRoutes.GET("/reports", controllers.GetAllReportsByUserID)
+	}
 
 }
