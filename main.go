@@ -14,5 +14,5 @@ func main() {
 	//create a engine and call SetUpRoutes
 	router := gin.Default()
 	routes.SetUpRoutes(router)
-	router.Run(":8080")
+	router.Run(":3000")
 }

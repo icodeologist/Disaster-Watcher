@@ -15,7 +15,6 @@ func SetUpRoutes(router *gin.Engine) {
 	// Load HTML templates from templates folder
 	router.LoadHTMLGlob("templates/*")
 	router.GET("/report/:id", controllers.GetReportById)
-	router.POST("/res", controllers.SearchPlaces)
 	router.GET("/", controllers.DisplayMap)
 	router.DELETE("/delete/:id", controllers.DeleteReportById)
 
@@ -27,13 +26,16 @@ func SetUpRoutes(router *gin.Engine) {
 	//auth section
 	router.POST("auth/register", handlers.Register)
 	router.POST("auth/login", handlers.Login)
-	router.GET("user/profile", middlewares.CheckAuth, controllers.GetUserProfile)
+	router.GET("auth/reset/password", handlers.ResetPassword)
+	router.POST("auth/reset/passsword", handlers.HandleResetPassword)
 
 	//applying middlewares
 	authRoutes := router.Group("/user")
 	authRoutes.Use(middlewares.CheckAuth)
+	ns := controllers.NewGeoService()
 	{
-		authRoutes.POST("/api/report", controllers.CreateReport)
+		authRoutes.POST("/api/report", ns.CreateReport)
+		authRoutes.GET("/profile", controllers.GetUserProfile)
 		authRoutes.GET("/reports", controllers.GetAllReportsByUserID)
 	}
 

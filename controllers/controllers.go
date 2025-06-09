@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/icodeologist/disasterwatch/api"
 	"github.com/icodeologist/disasterwatch/database"
 	"github.com/icodeologist/disasterwatch/models"
 	"github.com/icodeologist/disasterwatch/utils"
@@ -26,7 +25,7 @@ func CreateReport(c *gin.Context) {
 
 	userId, exists := c.Get("userId")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User is not authenticated"})
 		return
 	}
 
@@ -42,7 +41,17 @@ func CreateReport(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, report)
+	var allUsers []models.User
+	//Process the reports and send notificatino simultaneously
+	err := database.DB.Find(&allUsers).Error
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Could not fetch the users from the DB."})
+		return
+	} else {
+		// TODO : talk with notification microservices
+	}
+
+	c.JSON(http.StatusOK, gin.H{"Message": "Notification is being sent asynchronously"})
 }
 
 // everybody should see this
@@ -100,14 +109,6 @@ func DisplayMap(c *gin.Context) {
 
 }
 
-func SearchPlaces(c *gin.Context) {
-	location := c.PostForm("location")
-
-	data := api.ForwardGeo(location)
-	c.HTML(200, "result.html", gin.H{"data": data})
-
-}
-
 func GetAllReports(c *gin.Context) {
 	var reports []models.Report
 
@@ -155,5 +156,9 @@ func GetNearByReports(c *gin.Context) {
 	fmt.Println("Nearbyreports", nearByReports)
 
 	c.JSON(200, nearByReports)
+
+}
+
+func ProcessDisasterReport(c *gin.Context) {
 
 }
