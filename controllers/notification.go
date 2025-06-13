@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/icodeologist/disasterwatch/database"
 	"github.com/icodeologist/disasterwatch/models"
@@ -123,59 +122,3 @@ func Haversine(lat1, lon1, lat2, lon2 float64) float64 {
 
 	return R * c
 }
-
-func (gs *GeoService) FindUserWithRadius(report *models.Report, users []models.User, radiusinKm float64) error {
-	var processedUsers, failedUsers int
-
-	for _, user := range users {
-		if err := gs.CachedUserCords(&user); err != nil {
-			fmt.Printf("Skipping user ID %d (location: '%s'): %v\n", user.ID, user.Location, err)
-			failedUsers++
-			continue // Skip this user, process the rest
-		}
-
-		if user.CachedLat == nil || user.CachedLong == nil {
-			fmt.Printf("Skipping user ID %d: missing cached coordinates\n", user.ID)
-			failedUsers++
-			continue
-		}
-
-		// Fix the parameter order here too
-		distance := gs.Haversine(*user.CachedLat, *user.CachedLong, report.Latitude, report.Longitude)
-
-		if distance <= radiusinKm {
-			_ = fmt.Sprintf(
-				"Disaster Alert: %s reported nearby %s Distance: %.2f km",
-				report.Type, user.Location, distance)
-
-		}
-		processedUsers++
-	}
-
-	fmt.Printf("Processed %d users successfully, %d failed\n", processedUsers, failedUsers)
-	return nil
-}
-
-func (gs *GeoService) ProcessDisasterReport(report *models.Report, allUsers []models.User) error {
-	radius := 10.0
-	err := gs.FindUserWithRadius(report, allUsers, radius)
-	if err != nil {
-		return fmt.Errorf("Failed to get the notifications. %v. ", err)
-	}
-
-	fmt.Printf("Found %d users within the distance.", 10)
-
-	if 10 > 0 {
-		// fix this later
-		// TODO
-		for i := 0; i < 10; i++ {
-			fmt.Printf("sending notification to user %v", i)
-		}
-	} else {
-		return fmt.Errorf("There were no nearby users.")
-	}
-	return nil
-}
-
-// Email Service Helper functions
-//
