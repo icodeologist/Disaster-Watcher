@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/icodeologist/disasterwatch/database"
+	"github.com/icodeologist/disasterwatch/helpers"
 	"github.com/icodeologist/disasterwatch/models"
 	"github.com/icodeologist/disasterwatch/utils"
 )
@@ -40,6 +41,10 @@ func CreateReport(c *gin.Context) {
 		})
 		return
 	}
+
+	// Push the created report to stack
+	stack := helpers.Stack{}
+	stack.Push(&report)
 
 	var allUsers []models.User
 	//Process the reports and send notificatino simultaneously

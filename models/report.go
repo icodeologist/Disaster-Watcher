@@ -1,6 +1,7 @@
 package models
 
 import (
+	pb "github.com/icodeologist/grpc-proto"
 	"time"
 )
 
@@ -62,4 +63,22 @@ type PasswordResetRequest struct {
 	Token             string `json:"token"`
 	NewPassword       string `json:"new-password"`
 	ReTypeNewPassword string `json:"retype-newpassword"`
+}
+
+// The affected users are here
+type NotificationEvent struct {
+	UserID           uint
+	User             User
+	Action           string
+	Message          string
+	Timestamp        time.Time
+	NotificationType pb.NotificationType
+}
+
+type NotificationEvent2 struct {
+	User             string
+	Action           string
+	Message          string
+	TimeStamp        time.Time
+	NotificationType pb.NotificationType
 }
