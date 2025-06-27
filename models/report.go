@@ -72,7 +72,7 @@ type NotificationEvent struct {
 	Action           string
 	Message          string
 	Timestamp        time.Time
-	NotificationType pb.NotificationType
+	NotificationType pb.Notificationtype
 }
 
 type NotificationEvent2 struct {
@@ -80,5 +80,5 @@ type NotificationEvent2 struct {
 	Action           string
 	Message          string
 	TimeStamp        time.Time
-	NotificationType pb.NotificationType
+	NotificationType pb.Notificationtype
 }

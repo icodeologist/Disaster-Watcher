@@ -1,22 +1,28 @@
 package controllers
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/icodeologist/disasterwatch/database"
-	"github.com/icodeologist/disasterwatch/helpers"
 	"github.com/icodeologist/disasterwatch/models"
-	"github.com/icodeologist/disasterwatch/utils"
 )
+
+var ctx = context.Background()
+
+// Create report handles at api/v1/create
+// First we bind the json data and then use the redis list to push the recent report created and saved to database
+// Then we send the json message of messagaes being sent.
+// Same list is used to pop in the main function to get the report and send it has a param to findusesaffected function
 
 func CreateReport(c *gin.Context) {
 	var report models.Report
-
-	//get the incoming json and parse it
 	if err := c.ShouldBindJSON(&report); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "could not parse incoming json",
@@ -31,7 +37,6 @@ func CreateReport(c *gin.Context) {
 	}
 
 	report.UserId = userId.(uint)
-
 	report.Created_time = time.Now()
 	report.Updated_time = time.Now()
 
@@ -42,21 +47,24 @@ func CreateReport(c *gin.Context) {
 		return
 	}
 
-	// Push the created report to stack
-	stack := helpers.Stack{}
-	stack.Push(&report)
-
-	var allUsers []models.User
-	//Process the reports and send notificatino simultaneously
-	err := database.DB.Find(&allUsers).Error
+	redisClient, ctx, err := database.ConnectToRedis()
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Could not fetch the users from the DB."})
-		return
-	} else {
-		// TODO : talk with notification microservices
+		log.Printf("Error connecting to redis %v\n", err)
 	}
+	if report.ID == 0 {
+		log.Printf("Cannot push the empty report instance %v\n", &report)
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		log.Fatalf("ERROR : cannot marshal data %v\n", err)
+	}
+	_, err = redisClient.LPush(ctx, "reportLists", data).Result()
+	if err != nil {
+		log.Fatalf("ERORR : LPUSH %v\n", err)
+	}
+	log.Print("Successufully pushed the current report")
 
-	c.JSON(http.StatusOK, gin.H{"Message": "Notification is being sent asynchronously"})
+	c.JSON(http.StatusOK, gin.H{"Message": "Notification is being sent to the users."})
 }
 
 // everybody should see this
@@ -153,7 +161,7 @@ func GetNearByReports(c *gin.Context) {
 	var nearByReports []models.Report
 
 	for _, report := range allReports {
-		distance := utils.Haversine(report.Latitude, lat, report.Longitude, long)
+		distance := Haversine(report.Latitude, lat, report.Longitude, long)
 		if radiusDistance <= distance {
 			nearByReports = append(nearByReports, report)
 		}
@@ -161,9 +169,5 @@ func GetNearByReports(c *gin.Context) {
 	fmt.Println("Nearbyreports", nearByReports)
 
 	c.JSON(200, nearByReports)
-
-}
-
-func ProcessDisasterReport(c *gin.Context) {
 
 }

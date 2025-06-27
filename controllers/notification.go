@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/icodeologist/disasterwatch/database"
 	"github.com/icodeologist/disasterwatch/models"
@@ -124,11 +123,11 @@ func Haversine(lat1, lon1, lat2, lon2 float64) float64 {
 	return R * c
 }
 
-func (gs *GeoService) FindUserWithRadius(report *models.Report, users []models.User, radiusinKm float64) error {
+func FindUserWithRadius(report *models.Report, users []models.User, radiusinKm float64) error {
 	var processedUsers, failedUsers int
 
 	for _, user := range users {
-		if err := gs.CachedUserCords(&user); err != nil {
+		if err := CachedUserCords(&user); err != nil {
 			fmt.Printf("Skipping user ID %d (location: '%s'): %v\n", user.ID, user.Location, err)
 			failedUsers++
 			continue // Skip this user, process the rest
@@ -141,7 +140,7 @@ func (gs *GeoService) FindUserWithRadius(report *models.Report, users []models.U
 		}
 
 		// Fix the parameter order here too
-		distance := gs.Haversine(*user.CachedLat, *user.CachedLong, report.Latitude, report.Longitude)
+		distance := Haversine(*user.CachedLat, *user.CachedLong, report.Latitude, report.Longitude)
 
 		if distance <= radiusinKm {
 			_ = fmt.Sprintf(
@@ -156,9 +155,9 @@ func (gs *GeoService) FindUserWithRadius(report *models.Report, users []models.U
 	return nil
 }
 
-func (gs *GeoService) ProcessDisasterReport(report *models.Report, allUsers []models.User) error {
+func ProcessDisasterReport(report *models.Report, allUsers []models.User) error {
 	radius := 10.0
-	err := gs.FindUserWithRadius(report, allUsers, radius)
+	err := FindUserWithRadius(report, allUsers, radius)
 	if err != nil {
 		return fmt.Errorf("Failed to get the notifications. %v. ", err)
 	}
@@ -177,5 +176,47 @@ func (gs *GeoService) ProcessDisasterReport(report *models.Report, allUsers []mo
 	return nil
 }
 
-// Email Service Helper functions
-//
+func ReverseGeocoding(lat float64, long float64) (string, error) {
+	if lat == 0.0 || long == 0.0 {
+		return "", fmt.Errorf("Fields cannot be empty")
+	}
+
+	url := fmt.Sprintf("https://nominatim.openstreetmap.org/reverse?lat=%v&lon=%v&format=json", lat, long)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("Failed to send the request %v", req)
+	}
+	req.Header.Set("User-Agent", "DisasterNotifierapp/v1")
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("Exited while sending the request with the error %v", err)
+	}
+
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Failed witht the code %v", res.StatusCode)
+	}
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return "", fmt.Errorf("Failed to read the response body.")
+	}
+
+	var result struct {
+		LocationName string
+	}
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return "", fmt.Errorf("Cannot parse the incoming response")
+	}
+
+	if result.LocationName == "" {
+		return "", fmt.Errorf("Village area OR Off limit area")
+	}
+
+	return result.LocationName, nil
+
+}

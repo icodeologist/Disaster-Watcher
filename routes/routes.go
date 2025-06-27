@@ -32,9 +32,8 @@ func SetUpRoutes(router *gin.Engine) {
 	//applying middlewares
 	authRoutes := router.Group("/user")
 	authRoutes.Use(middlewares.CheckAuth)
-	ns := controllers.NewGeoService()
 	{
-		authRoutes.POST("/api/report", ns.CreateReport)
+		authRoutes.POST("/api/report", controllers.CreateReport)
 		authRoutes.GET("/profile", controllers.GetUserProfile)
 		authRoutes.GET("/reports", controllers.GetAllReportsByUserID)
 	}
