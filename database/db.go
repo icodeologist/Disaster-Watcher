@@ -1,13 +1,15 @@
 package database
 
 import (
+	"context"
 	"fmt"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 	"log"
 	"os"
 
 	"github.com/icodeologist/disasterwatch/models"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	"github.com/redis/go-redis/v9"
 )
 
 var DB *gorm.DB
@@ -31,6 +33,25 @@ func Connect() {
 		fmt.Println("Successfully connected to database")
 	}
 
-	DB.AutoMigrate(&models.Report{}, &models.User{}, &models.PasswordResetToken{})
+	DB.AutoMigrate(&models.Report{}, &models.User{}, &models.PasswordResetToken{}, &models.NotificationEvent{})
+
+}
+
+func ConnectToRedis() (*redis.Client, context.Context, error) {
+	ctx := context.Background()
+
+	client := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
+
+	ping, err := client.Ping(ctx).Result()
+	if err != nil {
+		return nil, ctx, err
+	}
+	log.Printf("Ping : %v\n", ping)
+
+	return client, ctx, nil
 
 }

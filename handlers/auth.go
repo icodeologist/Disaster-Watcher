@@ -58,8 +58,7 @@ func Register(c *gin.Context) {
 	}
 
 	// call ForwardGeoCoding here for one time cost
-	notifier := controllers.NewGeoService()
-	er := notifier.CachedUserCords(&user)
+	er := controllers.CachedUserCords(&user)
 	if er != nil {
 		fmt.Println("Please fix this later ", er)
 	}
