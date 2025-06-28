@@ -2,12 +2,13 @@ package controllers
 
 import (
 	"fmt"
-	"github.com/icodeologist/disasterwatch/database"
-	"github.com/icodeologist/disasterwatch/models"
-	pb "github.com/icodeologist/grpc-proto"
 	"log"
 	"strings"
 	"time"
+
+	"github.com/icodeologist/disasterwatch/database"
+	"github.com/icodeologist/disasterwatch/models"
+	pb "github.com/icodeologist/grpc-proto"
 )
 
 const (
@@ -72,6 +73,11 @@ func FindUserAffected(report models.Report) ([]models.User, error) {
 		err := fmt.Errorf("No users were found")
 		return nil, err
 	}
+	fmt.Print("USERID         USER Details\n")
+	for _, n := range affectedUsers {
+		fmt.Printf("%v   \n", n.ID)
+
+	}
 	return affectedUsers, nil
 }
 
@@ -82,21 +88,23 @@ func MapEachUsersTONotificationEventInstance(users []models.User, report models.
 	}
 	for _, user := range users {
 		precaution := customPrecautionMessages(report.Type)
-		locationName, err := ReverseGeocoding(report.Latitude, report.Longitude)
-		if err != nil {
-			log.Printf("ERROR : reverse geocoding error %v\n", err)
-		}
-		customMessage := fmt.Sprintf("There is a %v nearby %v. Please take the proper precautions and be safe. %v\n", report.Type, locationName, precaution)
+		customMessage := fmt.Sprintf("There is a %v nearby your location. Please take the proper precautions and be safe. %v\n", report.Type, precaution)
 		// Make some dummy events here
-		userNotifEvent := &models.NotificationEvent{
+		userNotifEvent := models.NotificationEvent{
 			UserID:           user.ID,
 			Action:           DefaultAction,
 			Message:          customMessage,
 			Timestamp:        time.Now(),
 			NotificationType: pb.Notificationtype_email, // let the user opt or send both way
 		}
-		UserNotificationEventRequest = append(UserNotificationEventRequest, *userNotifEvent)
+		UserNotificationEventRequest = append(UserNotificationEventRequest, userNotifEvent)
 	}
+	log.Printf("Notification events %v\n", UserNotificationEventRequest)
+	log.Print("USER ID    Action     Notificationtype\n")
+	for _, evt := range UserNotificationEventRequest {
+		log.Printf("%v    %v        %v", evt.UserID, evt.Action, evt.NotificationType)
+	}
+
 	return UserNotificationEventRequest, nil
 
 }

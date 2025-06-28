@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -111,51 +112,122 @@ func HealthCheck(client pb.NotificationserviceClient) {
 
 }
 
+//	func SendBatchNotificationsToAffectedUsers(client pb.NotificationserviceClient, notifEvents []models.NotificationEvent, report models.Report) {
+//		ctx, cancelFunc := context.WithTimeout(context.Background(), 30*time.Second)
+//		defer cancelFunc()
+//
+//		stream, err := client.Sendnotiificationacceptingdisasterapidata(ctx) // rpc method
+//		if err != nil {
+//			log.Fatalf("Failed to create a batch stream %v\n.", err)
+//		}
+//		fmt.Printf("Sending the batch of %v\n", len(notifEvents))
+//		for _, user := range notifEvents {
+//
+//			// user id from uint to str
+//			userIDStr := fmt.Sprintf("%v", user.User.ID)
+//			userPhoneNumStr := fmt.Sprintf("%v", user.User.PhoneNumber)
+//			// sending the request to  rpc method
+//			request := &pb.Notificationrequestwithdata{
+//				UserId:          userIDStr,
+//				UserEmail:       user.User.Email,
+//				UserPhoneNumber: userPhoneNumStr,
+//				ReportType:      report.Type,
+//				ReportLocation:  "Location need to be filled",
+//				Timestamp:       timestamppb.Now(),
+//				Type:            user.NotificationType,
+//			}
+//
+//			if err := stream.Send(request); err != nil {
+//				log.Printf("Failed to send the batch of notifications %v\n", err)
+//			}
+//			fmt.Printf("   📤 Queued: %s \n", userIDStr)
+//			time.Sleep(200 * time.Millisecond)
+//		}
+//
+//		resp, err := stream.CloseAndRecv()
+//		if err != nil {
+//			log.Fatalf("Failed to recieve the batch response %v\n.", err)
+//		}
+//		fmt.Printf("\n🎯 Batch Results:\n")
+//		fmt.Printf("   Total Sent: %d\n", resp.TotalSent)
+//		fmt.Printf("   Successful: %d\n", resp.Success)
+//		fmt.Printf("   Failed: %d\n", resp.Failed)
+//		fmt.Println("WE reached HERER")
+//		fmt.Printf("Failed users %v\n", resp.FailedPhoneNums)
+//		fmt.Printf("Failed users %v\n", resp.FailedUserEmails)
+//
+//		fmt.Println("Processed all the notifications.")
+//	}
 func SendBatchNotificationsToAffectedUsers(client pb.NotificationserviceClient, notifEvents []models.NotificationEvent, report models.Report) {
 	ctx, cancelFunc := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelFunc()
 
-	stream, err := client.Sendnotiificationacceptingdisasterapidata(ctx) // rpc method
+	stream, err := client.Sendnotiificationacceptingdisasterapidata(ctx)
 	if err != nil {
-		log.Fatalf("Failed to create a batch stream %v\n.", err)
+		log.Printf("Failed to create a batch stream: %v", err) // Changed from Fatalf to Printf
+		return
 	}
-	fmt.Printf("Sending the batch of %v\n", len(notifEvents))
-	for _, user := range notifEvents {
 
-		locationName, err := controllers.ReverseGeocoding(report.Latitude, report.Longitude)
-		if err != nil {
-			log.Printf("ERROR : reverese geocoding nil locaiton %v\n", err)
+	fmt.Printf("Sending the batch of %v notifications\n", len(notifEvents))
+
+	fmt.Print("USER ID IN SEND FUNCTION\n")
+	for _, n := range notifEvents {
+		fmt.Printf("%v\n", n)
+		fmt.Printf("%v\n", n.UserID)
+	}
+
+	var failedSends int
+	for i, events := range notifEvents {
+		// More explicit type conversion
+		userIDStr := strconv.FormatUint(uint64(events.UserID), 10)
+
+		// getting user object from the db
+		var user models.User
+		res := database.DB.First(&user, "id=?", events.UserID)
+		if res.RowsAffected == 0 {
+			fmt.Print("NO users found\n")
 		}
-		// sending the request to  rpc method
+		if res.Error != nil {
+			fmt.Printf("Error  while fetching user details : %v\n", res.Error.Error())
+		}
+
+		notifEvents[i].User = user
+
+		userPhoneNumStr := strconv.FormatUint(uint64(user.PhoneNumber), 10)
+
 		request := &pb.Notificationrequestwithdata{
-			UserId:          string(user.User.ID),
-			UserEmail:       user.User.Email,
-			UserPhoneNumber: string(user.User.PhoneNumber),
+			UserId:          userIDStr,
+			UserEmail:       user.Email,
+			UserPhoneNumber: userPhoneNumStr,
 			ReportType:      report.Type,
-			ReportLocation:  locationName,
+			ReportLocation:  "Nil location for now", // Use actual location if available
 			Timestamp:       timestamppb.Now(),
-			Type:            user.NotificationType,
+			Type:            events.NotificationType,
 		}
-		fmt.Printf("user request to rpc function : %v\n", request)
 
 		if err := stream.Send(request); err != nil {
-			log.Printf("Failed to send the batch of notifications %v\n", err)
+			log.Printf("Failed to send notification to user %s: %v", userIDStr, err)
+			failedSends++
+			continue // Optionally continue with next user
 		}
-		fmt.Printf("   📤 Queued: %s (%s)\n", string(user.User.ID), user.Action)
-		time.Sleep(200 * time.Millisecond)
+		fmt.Printf("User id %v\n", userIDStr)
+		fmt.Printf("   📤 Queued: %s\n", userIDStr)
+		// time.Sleep(200 * time.Millisecond) // Consider removing if not needed
 	}
 
 	resp, err := stream.CloseAndRecv()
 	if err != nil {
-		log.Fatalf("Failed to recieve the batch response %v\n.", err)
+		log.Printf("Failed to receive batch response: %v", err)
+		return
 	}
+
 	fmt.Printf("\n🎯 Batch Results:\n")
+	fmt.Printf("   Total Attempted: %d\n", len(notifEvents))
 	fmt.Printf("   Total Sent: %d\n", resp.TotalSent)
 	fmt.Printf("   Successful: %d\n", resp.Success)
 	fmt.Printf("   Failed: %d\n", resp.Failed)
-	fmt.Println("WE reached HERER")
-	fmt.Printf("Failed users %v\n", resp.FailedPhoneNums)
-	fmt.Printf("Failed users %v\n", resp.FailedUserEmails)
-
+	fmt.Printf("   Local Send Failures: %d\n", failedSends)
+	fmt.Printf("Failed phone numbers: %v\n", resp.FailedPhoneNums)
+	fmt.Printf("Failed emails: %v\n", resp.FailedUserEmails)
 	fmt.Println("Processed all the notifications.")
 }
