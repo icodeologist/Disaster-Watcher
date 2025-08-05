@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/icodeologist/disasterwatch/controllers"
 	"github.com/icodeologist/disasterwatch/database"
 	"github.com/icodeologist/disasterwatch/models"
 	"github.com/icodeologist/disasterwatch/routes"
+	"github.com/icodeologist/disasterwatch/services"
 	pb "github.com/icodeologist/grpc-proto"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
@@ -67,11 +67,11 @@ func startRedis(client pb.NotificationserviceClient) {
 			if err != nil {
 				log.Printf("ERROR :UNMARSHAL ERROR %v\n", err)
 			}
-			users, err := controllers.FindUserAffected(report)
+			users, err := services.FindUserAffected(report)
 			if err != nil {
 				log.Printf("ERROR : %v\n", err)
 			}
-			usersNotificationRequests, err := controllers.MapEachUsersTONotificationEventInstance(users, report)
+			usersNotificationRequests, err := services.MapEachUsersTONotificationEventInstance(users, report)
 			if err != nil {
 				log.Printf("ERROR : %v\n", err)
 			}

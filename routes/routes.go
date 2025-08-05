@@ -3,8 +3,6 @@ package routes
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/icodeologist/disasterwatch/controllers"
-	"github.com/icodeologist/disasterwatch/handlers"
-	"github.com/icodeologist/disasterwatch/middlewares"
 )
 
 var c *gin.Context
@@ -24,14 +22,14 @@ func SetUpRoutes(router *gin.Engine) {
 	router.GET("/reports/nearby", controllers.GetNearByReports)
 
 	//auth section
-	router.POST("auth/register", handlers.Register)
-	router.POST("auth/login", handlers.Login)
-	router.GET("auth/reset/password", handlers.ResetPassword)
-	router.POST("auth/reset/passsword", handlers.HandleResetPassword)
+	router.POST("auth/register", controllers.Register)
+	router.POST("auth/login", controllers.Login)
+	router.GET("auth/reset/password", controllers.ResetPassword)
+	router.POST("auth/reset/passsword", controllers.HandleResetPassword)
 
 	//applying middlewares
 	authRoutes := router.Group("/user")
-	authRoutes.Use(middlewares.CheckAuth)
+	authRoutes.Use(controllers.CheckAuth)
 	{
 		authRoutes.POST("/api/report", controllers.CreateReport)
 		authRoutes.GET("/profile", controllers.GetUserProfile)
