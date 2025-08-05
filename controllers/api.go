@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/icodeologist/disasterwatch/database"
 	"github.com/icodeologist/disasterwatch/models"
+	"github.com/icodeologist/disasterwatch/services"
 )
 
 var ctx = context.Background()
@@ -90,7 +91,7 @@ func GetAllReportsByUserID(c *gin.Context) {
 func GetReportById(c *gin.Context) {
 	id := c.Param("id")
 	var report models.Report
-	if err := database.DB.First(&report, id).Error; err != nil {
+	if err := database.DB.Preload("User").First(&report, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "given id is not found",
 		})
@@ -105,7 +106,7 @@ func DeleteReportById(c *gin.Context) {
 	id := c.Param("id")
 	var report models.Report
 
-	if err := database.DB.Delete(&report, id).Error; err != nil {
+	if err := database.DB.Preload("User").Delete(&report, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "could not delete the given record",
 		})
@@ -124,8 +125,7 @@ func DisplayMap(c *gin.Context) {
 
 func GetAllReports(c *gin.Context) {
 	var reports []models.Report
-
-	if err := database.DB.Find(&reports).Error; err != nil {
+	if err := database.DB.Preload("User").Find(&reports).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -161,7 +161,7 @@ func GetNearByReports(c *gin.Context) {
 	var nearByReports []models.Report
 
 	for _, report := range allReports {
-		distance := Haversine(report.Latitude, lat, report.Longitude, long)
+		distance := services.Haversine(report.Latitude, lat, report.Longitude, long)
 		if radiusDistance <= distance {
 			nearByReports = append(nearByReports, report)
 		}
