@@ -32,20 +32,19 @@ Add this header to all protected requests:
   "phoneNumber": "9876543210"
 }
 ```
-```
-## Step 2 — Login
-**POST** `/user/login`
-- Returns a JWT token(valid for 24hour)
+## Step 2 - Login
+**POST** `user/login`
+- Returns a JWT token(valid for 24 hours.)
+
 ```json
 {
-  "username": "denzil",
-  "email": "user@example.com",
-  "password": "mypassword",
-} 
+  username : denzil,
+  email : myemail@gmail.com,
+  password : myapssword
+}
+```
 ```
 ```
 
-- Response: 
-```json
-{ "token": "eyJhbGciOiJIUzI1NiIs..." }
-```
+
+
