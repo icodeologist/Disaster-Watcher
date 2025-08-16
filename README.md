@@ -124,14 +124,13 @@ curl -X POST http://localhost:3000/user/reset-password \
 
 # System Design
 ## Flow: User Report → Notifications via gRPC
-1.User submits a report through the API.
-2.Report is pushed to Redis (Report Lists).
-3.Background worker (infinite loop) continuously pops reports from Redis.
-4.For each report:
--Find the affected users using helper functions (/services/helper.go).
--Perform a gRPC health check on the Notification microservice.
--Call SendBatchNotificationsToAffectedUsers(grpcClient, requests, report).
-6.Notification Service processes the requests and delivers alerts to users.
-
+1. **User submits a report** through the API.  
+2. **Report is pushed to Redis** (`Report Lists`).  
+3. **Background worker (infinite loop)** continuously pops reports from Redis.  
+4. For each report:  
+   - Find the **affected users** using helper functions (`/services/helper.go`).  
+   - Perform a **gRPC health check** on the Notification microservice.  
+   - Call `SendBatchNotificationsToAffectedUsers(grpcClient, requests, report)`.  
+5. **Notification Service** processes the requests and delivers alerts to users.  
 ![alt text](./design-pics/Disaster-redis-microservice-desing.png)
 
