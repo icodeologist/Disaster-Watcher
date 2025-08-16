@@ -45,3 +45,40 @@ This API uses **JWT Bearer Tokens** for all requests.
 ---
 
 **Example Token**: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NTQ0ODQ2NTUsImlkIjo2MH0.wo8iHgN6mSbr4lmEOiggjHw_ZfrjkyTRmucEch5XB2w
+
+
+# API Authentication & Usage Guide
+
+This API uses **JWT Bearer Tokens** for authentication.  
+Add this header to all protected requests:
+
+## Step 1 — Register
+**POST** `/user/register`
+
+```json
+{
+  "username": "denzil",
+  "password": "mypassword",
+  "email": "user@example.com",
+  "location": "Mumbai",
+  "phoneNumber": "9876543210"
+}
+
+## Step 2 — Login
+**POST** `/user/login`
+- Returns a JWT token(valid for 24hour)
+```
+```
+{
+  "username": "denzil",
+  "email": "user@example.com",
+  "password": "mypassword",
+} 
+```
+```
+
+- Response: 
+
+{ "token": "eyJhbGciOiJIUzI1NiIs..." }
+
+
