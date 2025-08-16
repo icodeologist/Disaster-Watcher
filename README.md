@@ -116,10 +116,10 @@ curl -X POST http://localhost:3000/user/reset-password \
 # System Design
 
 ### User posted report and how it communicates with the notification gRPC service.
--- User posts the report
--- The report gets pushed to redis-list ("Report Lists")
--- There is a infinite loop running which simply pops from the redis-list("Report Lists") and gets the report.
--- This report instance is used to get the users affected from helper functions (/Services/helper.go)
--- Then we health check the grpc service and send the notification using this function
+- User posts the report
+- The report gets pushed to redis-list ("Report Lists")
+- There is a infinite loop running which simply pops from the redis-list("Report Lists") and gets the report.
+- This report instance is used to get the users affected from helper functions (/Services/helper.go)
+- Then we health check the grpc service and send the notification using this function
 SendBatchNotificationsToAffectedUsers(grpc Client, user notification requests, report)
 ![alt text](./design-pics/Disaster-redis-microservice-desing.png)
