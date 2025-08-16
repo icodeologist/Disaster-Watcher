@@ -134,3 +134,31 @@ curl -X POST http://localhost:3000/user/reset-password \
 5. **Notification Service** processes the requests and delivers alerts to users.  
 ![alt text](./design-pics/Disaster-redis-microservice-desing.png)
 
+
+# Endpoints
+
+## 📑 API Endpoints
+
+### Public Endpoints
+| Method | Endpoint                  | Description                        |
+|--------|---------------------------|------------------------------------|
+| GET    | `/report/:id`             | Get a report by its ID            |
+| DELETE | `/delete/:id`             | Delete a report by its ID         |
+| GET    | `/reports/all`            | Get all reports                   |
+| GET    | `/reports/nearby`         | Get nearby reports (filter by location params) |
+
+### Authentication
+| Method | Endpoint                       | Description                          |
+|--------|--------------------------------|--------------------------------------|
+| POST   | `/auth/register`               | Register a new user                  |
+| POST   | `/auth/login`                  | Login user and get JWT token         |
+| GET    | `/auth/reset/password`         | Request password reset (send email)  |
+| POST   | `/auth/reset/passsword`        | Handle password reset (apply change) |
+
+### Authenticated User Endpoints *(require JWT via middleware)*
+| Method | Endpoint                       | Description                           |
+|--------|--------------------------------|---------------------------------------|
+| POST   | `/user/api/report`             | Create a new report                   |
+| GET    | `/user/profile`                | Get user profile                      |
+| GET    | `/user/reports`                | Get all reports created by the user   |
+
