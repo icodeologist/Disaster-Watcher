@@ -122,4 +122,4 @@ curl -X POST http://localhost:3000/user/reset-password \
 -- This report instance is used to get the users affected from helper functions (/Services/helper.go)
 -- Then we health check the grpc service and send the notification using this function
 SendBatchNotificationsToAffectedUsers(grpc Client, user notification requests, report)
-![alt text](Disaster-redis-microservice-desing.png)
+![alt text](./design-pics/Disaster-redis-microservice-desing.png)

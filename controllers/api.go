@@ -39,7 +39,6 @@ func CreateReport(c *gin.Context) {
 
 	report.UserId = userId.(uint)
 	report.Created_time = time.Now()
-	report.Updated_time = time.Now()
 
 	if err := database.DB.Create(&report).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{

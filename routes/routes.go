@@ -8,10 +8,6 @@ import (
 var c *gin.Context
 
 func SetUpRoutes(router *gin.Engine) {
-	router.Static("/static", "./static")
-
-	// Load HTML templates from templates folder
-	router.LoadHTMLGlob("templates/*")
 	router.GET("/report/:id", controllers.GetReportById)
 	router.GET("/", controllers.DisplayMap)
 	router.DELETE("/delete/:id", controllers.DeleteReportById)

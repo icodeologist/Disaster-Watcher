@@ -60,7 +60,9 @@ func Register(c *gin.Context) {
 	// call ForwardGeoCoding here for one time cost
 	er := services.CachedUserCords(&user)
 	if er != nil {
-		fmt.Println("Please fix this later ", er)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"data": err.Error(),
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": user})
