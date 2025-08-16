@@ -63,6 +63,9 @@ Add this header to all protected requests:
   "location": "Mumbai",
   "phoneNumber": "9876543210"
 }
+```
+```
+
 
 ## Step 2 — Login
 **POST** `/user/login`
@@ -80,5 +83,4 @@ Add this header to all protected requests:
 - Response: 
 
 { "token": "eyJhbGciOiJIUzI1NiIs..." }
-
 
