@@ -38,13 +38,77 @@ Add this header to all protected requests:
 
 ```json
 {
-  username : denzil,
-  email : myemail@gmail.com,
-  password : myapssword
+  "username": "denzil",
+  "email": "myemail@gmail.com",
+  "password": "mypassword"
 }
 ```
+- Response(jwt token).
+```json 
+{
+  { "token": "eyJhbGciOiJIUzI1NiIs..." }
+}
 ```
+## Step 3 - Use the token.
+- Include in every protected request.
+```
+    Authorization: Bearer YOUR_JWT_TOKEN
 ```
 
+## Step 4 - Access profile(protected).
+**GET** `user/profile`
+- Response - Returns the current user who is authenticated.
+- Example
+```json
+{
+  "user": {
+    "id": 1,
+    "userName": "denzil",
+    "email": "user@example.com",
+    "location": "Mumbai",
+    "phoneNumber": "9876543210"
+  }
+}
+```
+## Step 5 - Reset password 
+1. Request reset link And it will give you a token(valid for 15 mins.)
+You can find the token in your given email account.
+ **GET** `/user/reset-password?email=youremail@/`
 
+2. Reset the password
+- Use the token to reset the password
+ **POST** `/user/reset-password/`
+ -Example request
+ ```json
+{
+  "token": "reset-token",
+  "new-password": "newPass123",
+  "retype-newpassword": "newPass123"
+}
+```
+## Step 6 - Quick test with Curl.
+```bash
+# Register
+curl -X POST http://localhost:3000/user/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"denzil","password":"12345678","email":"user@example.com","location":"Mumbai","phoneNumber":"9876543210"}'
 
+# Login
+curl -X POST http://localhost:3000/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"12345678"}'
+
+# Profile
+curl -X GET http://localhost:3000/user/profile \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Request Password Reset
+curl -X GET "http://localhost:3000/user/reset-password?email=user@example.com"
+
+# Reset Password
+curl -X POST http://localhost:3000/user/reset-password \
+  -H "Content-Type: application/json" \
+  -d '{"token":"reset-token","new-password":"newPass123","retype-newpassword":"newPass123"}'
+
+```
+ 
