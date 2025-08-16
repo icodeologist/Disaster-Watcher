@@ -111,4 +111,10 @@ curl -X POST http://localhost:3000/user/reset-password \
   -d '{"token":"reset-token","new-password":"newPass123","retype-newpassword":"newPass123"}'
 
 ```
- 
+
+CRUD operations
+
+ | Method| Endpoint | Request data | Response data | Description  |
+| ----------- | ----------- |
+| Header | Title |
+| Paragraph | Text |
