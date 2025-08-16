@@ -14,6 +14,15 @@
 - Basic crud operations 
 - Yeah i need to add some features that should make this somewhat authentic
 
+## TechStack
+
+## ⚡ Tech Stack
+
+- **Language:** Go (Golang)
+- **Database:** PostgreSQL, Redis
+- **Communication:** gRPC, Protocol Buffers
+- **Auth & Security:** JWT-based authentication
+- **Other Utilities:** .env
 
 # API Authentication & Usage Guide
 
@@ -114,12 +123,15 @@ curl -X POST http://localhost:3000/user/reset-password \
 
 
 # System Design
+## Flow: User Report → Notifications via gRPC
+1.User submits a report through the API.
+2.Report is pushed to Redis (Report Lists).
+3.Background worker (infinite loop) continuously pops reports from Redis.
+4.For each report:
+-Find the affected users using helper functions (/services/helper.go).
+-Perform a gRPC health check on the Notification microservice.
+-Call SendBatchNotificationsToAffectedUsers(grpcClient, requests, report).
+6.Notification Service processes the requests and delivers alerts to users.
 
-### User posted report and how it communicates with the notification gRPC service.
-- User posts the report
-- The report gets pushed to redis-list ("Report Lists")
-- There is a infinite loop running which simply pops from the redis-list("Report Lists") and gets the report.
-- This report instance is used to get the users affected from helper functions (/Services/helper.go)
-- Then we health check the grpc service and send the notification using this function
-SendBatchNotificationsToAffectedUsers(grpc Client, user notification requests, report)
 ![alt text](./design-pics/Disaster-redis-microservice-desing.png)
+
