@@ -1,7 +1,21 @@
+# Features and Roadmap
+ DisasterNotifier is a microservice api written in golang that has:
+ - **User authentication:** Uses jwt token based authentication
+ - **Asynchronous data handling:** Fill this up
+ - **Notification system:** talks to it using gRPC. It handles notificaiton events.
+ - **Forward and reverse geocoding:** To handle the user location and efficiently give the co-ordinates and locaiton likewise.
+
+ ### Roadmap
+ - **Improving endpoints edge cases:**
+ - **Pub-sub architecture for efficient messaging:**
+ - **Separate auth microservice:**
+ - **Testing:** I have a long way in writing  good tests. So ill practice and study hard for this.
+ - **Improving report handles and user experience:** Currently it only displays the report to the user. In future Im planning to add reports from the external apis and validate them. Also improve the user expirience by adding more fields to report model.
 ## ⚡ Tech Stack
 
 - **Language:** Go (Golang)
-- **Database:** PostgreSQL, Redis
+- **Frameword:** gin(github.com/gin-gonic/gin)
+- **Database:** PostgreSQL, Redis(Lists)
 - **Communication:** gRPC, Protocol Buffers
 - **Auth & Security:** JWT-based authentication
 - **Other Utilities:** .env
