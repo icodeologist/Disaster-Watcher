@@ -17,7 +17,7 @@ import (
 
 var ctx = context.Background()
 
-// Create report handles at api/v1/create
+// Create report handles at api/create-report
 // First we bind the json data and then use the redis list to push the recent report created and saved to database
 // Then we send the json message of messagaes being sent.
 // Same list is used to pop in the main function to get the report and send it has a param to findusesaffected function
@@ -69,6 +69,7 @@ func CreateReport(c *gin.Context) {
 
 // everybody should see this
 // Kind a like insta posts but they can edit it
+// FIXME : unwanted funciton
 func GetAllReportsByUserID(c *gin.Context) {
 	var reports []models.Report
 
@@ -160,13 +161,17 @@ func GetNearByReports(c *gin.Context) {
 	var nearByReports []models.Report
 
 	for _, report := range allReports {
-		distance := services.Haversine(report.Latitude, lat, report.Longitude, long)
-		if radiusDistance <= distance {
+		distance := services.Haversine(lat, long, report.Latitude, report.Longitude)
+		if distance <= radiusDistance {
 			nearByReports = append(nearByReports, report)
 		}
 	}
-	fmt.Println("Nearbyreports", nearByReports)
 
+	if len(nearByReports) == 0 {
+		c.JSON(400, gin.H{"Message": "There are so reported disasters nearby."})
+		return
+	}
+	// The nearby reports contains the user who posted the reports and the reports itself.
 	c.JSON(200, nearByReports)
 
 }
