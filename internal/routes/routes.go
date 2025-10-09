@@ -6,8 +6,6 @@ import (
 	"github.com/icodeologist/disasterwatch/internal/api/handler"
 )
 
-var c *gin.Context
-
 func SetUpRoutes(router *gin.Engine) {
 	router.GET("/report/:id", handler.GetReportById)
 	// TODO: Make a endpoint that deletes the resolved or not active reports.
@@ -25,14 +23,20 @@ func SetUpRoutes(router *gin.Engine) {
 	router.GET("/hello", handler.CreateReport)
 
 	//applying middlewares
-	authRoutes := router.Group("/api")
-	authRoutes.Use(auth.AuthCheckingMiddleware)
+	authMiddlewareRouter := router.Group("/api")
+	authMiddlewareRouter.Use(auth.AuthCheckingMiddleware)
 	{
-		// authRoutes.POST("/create-report", handler.CreateReport)
-		// authRoutes.GET("/profile", auth.GetUserProfile)
-		authRoutes.GET("/reports", handler.GetAllReportsByUserID)
-		authRoutes.GET("/get_current_user", auth.GetUserProfileInfo)
-		authRoutes.GET("/dummy", auth.AdminMiddleware)
+		// authMiddlewareRouter.POST("/create-report", handler.CreateReport)
+		// authMiddlewareRouter.GET("/profile", auth.GetUserProfile)
+		authMiddlewareRouter.GET("/reports", handler.GetAllReportsByUserID)
+		authMiddlewareRouter.GET("/get_current_user", auth.GetUserProfileInfo)
+		authMiddlewareRouter.GET("/dummy", auth.AdminMiddleware)
 	}
+	// router.POST("/isadmin", auth.CheckIfuserIsAdmin)
+
+	// admin middleware
+	adminMiddlewareRouter := router.Group("/admin")
+	adminMiddlewareRouter.Use(auth.AdminMiddleware)
+	adminMiddlewareRouter.GET("/user", auth.GetAdminUserInfo)
 
 }
