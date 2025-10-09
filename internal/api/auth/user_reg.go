@@ -13,7 +13,10 @@ import (
 	database "github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
 	"github.com/icodeologist/disasterwatch/internal/utils"
-	"golang.org/x/crypto/bcrypt"
+)
+
+const (
+	DefaultRole = "user"
 )
 
 // User registration with passworkd hashing and location caching
@@ -33,29 +36,28 @@ func UserRegistration(c *gin.Context) {
 		c.JSON(http.StatusAlreadyReported, gin.H{"error": "user already exists"})
 		return
 	}
-
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(userInput.Password), bcrypt.DefaultCost)
+	hashedPassword, err := utils.HashPassword(userInput.Password)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "password could not be hashed"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	user := models.User{
-		UserName: userInput.Username,
-		Password: string(passwordHash),
-		Email:    userInput.Email,
-		Location: userInput.Location,
-	}
 
+	var user models.User
+	user.UserName = userInput.Username
+	user.Password = hashedPassword
+	user.Email = userInput.Email
+	user.Location = userInput.Location
+	// check if user gives a special key
 	res := database.DB.Create(&user)
 	if res.Error != nil {
 		fmt.Printf("error : %v", res.Error.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while creating a user"})
 		return
 	}
-	er := utils.CachedUserCords(&user)
-	if er != nil {
+	err = utils.CachedUserCords(&user)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"data": err.Error(),
+			"data": err,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"data": user})
@@ -75,13 +77,22 @@ func UserLogin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email adress does not exists"})
 		return
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(userFound.Password), []byte(userInput.Password)); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid password"})
+	if err := utils.CheckHashPasswords(userInput.Password, userFound.Password); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "invalid password"})
 		return
 	}
+
+	if userInput.AmdinSecretKey == os.Getenv("ADMINCODE") {
+		userFound.IsAdmin = true
+		database.DB.Save(&userFound)
+		c.JSON(200, gin.H{"message": userFound})
+	}
+
 	generateToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"id":  userFound.ID,
-		"exp": time.Now().Add(time.Hour * 24).Unix(),
+		"id":       userFound.ID,
+		"username": userFound.UserName,
+		"email":    userFound.Email,
+		"exp":      time.Now().Add(time.Hour * 24).Unix(),
 	})
 	token, err := generateToken.SignedString([]byte(os.Getenv("SECRET")))
 	if err != nil {
@@ -99,10 +110,13 @@ func GenerateToken(n int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func GetUserProfileInfo(c *gin.Context) {
-	currentUser, _ := c.Get("currentUser")
-	c.JSON(200, gin.H{
-		"Current User": currentUser,
-	})
-
+/*
+{
+    "username" : "adminDenzil",
+    "email" : "adminDenzil@admin.com",
+    "password" : "12341234",
+    "location" : "manglore",
+    "adminkey" : "deeznuts"
 }
+*
+*/

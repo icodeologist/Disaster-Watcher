@@ -2,6 +2,7 @@ package auth
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -78,11 +79,22 @@ func AdminMiddleware(c *gin.Context) {
 	// then check the role may be
 	currentUser, _ := c.Get("currentUser")
 	id := currentUser.(models.User).ID
-	var getCurrentUser models.User
-	err := database.DB.Where("id=?", id).First(&getCurrentUser)
+	var currentAuthenticatedUser models.User
+	err := database.DB.Where("id=?", id).First(&currentAuthenticatedUser)
 	if err != nil {
-		fmt.Print(err) // FIX: add legimate error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database query error. Check logs."})
 	}
 
+	if !currentAuthenticatedUser.IsAdmin {
+		err, val := CheckIfuserIsAdmin(currentAuthenticatedUser.Email)
+		if err != nil {
+			log.Fatal("error @ admin middleware :", err)
+		}
+		println("val @middleware admin :", val)
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "you need to be admin to visit this endpoin"})
+	}
+
+	c.Set("admin", currentUser)
+	c.Next()
 	c.JSON(200, gin.H{"message": "working"})
 }
