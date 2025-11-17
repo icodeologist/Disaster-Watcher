@@ -8,11 +8,16 @@ type User struct {
 	Location string `json:"location"`
 	// for simplycity I have only 2 roles (admin and user)
 	// admin can do everything what user can do + approve/reject reports and delete them
-	// if more roles needed may be we can simply use RBAC system // TODO:
-	IsAdmin        bool     `gorm:"default:false"`
-	CachedLat      *float64 `json:"cachedlat" gorm:"column:cachedlat"`
-	CachedLong     *float64 `json:"cachedlong" gorm:"column:cachedlong"`
-	LocationCached bool     `json:"locationcached" gorm:"default:false"`
+	// if more roles needed may be we can qmply use RBAC system // TODO:
+	IsAdmin                            bool     `gorm:"default:false"`
+	DeviceToken                        string   `json:"devicetoken" gorm:"column:fcmdevicetoken"`
+	CachedLat                          *float64 `json:"cachedlat" gorm:"column:cachedlat"`
+	CachedLong                         *float64 `json:"cachedlong" gorm:"column:cachedlong"`
+	LocationCached                     bool     `json:"locationcached" gorm:"default:false"`
+	VerifiedReports                    int      `json:"successreportverification" gorm:"default:0"`
+	ConfirmedReportsThatBecameVerified int      `json:"confirmedreportsthatbecameverified" gorm:"default:0"`
+	UserTrustScore                     int      `json:"userTrustScore" gorm:"column:trustscore;default:0"`
+	TotalReportPosted                  int      `json:"totalReportPosted" gorm:"default:0"`
 }
 
 // this help during auth handlers
@@ -22,4 +27,5 @@ type AuthInput struct {
 	Password       string `json:"password"`
 	Location       string `json:"location"`
 	AmdinSecretKey string `json:"adminkey"`
+	DeviceToken    string `json:"devicetoken"`
 }

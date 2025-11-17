@@ -1,11 +1,16 @@
 package models
 
+import (
+	"gorm.io/gorm"
+)
+
 type Location struct {
 	Lat  float64 `json:"lat"`
 	Long float64 `json:"long"`
 }
 
 type Report struct {
+	gorm.Model
 	ID               uint     `json:"id" gorm:"primaryKey"`
 	UserId           uint     `json:"userid"`
 	User             User     `gorm:"foreignKey:UserId"`
