@@ -25,8 +25,8 @@ func UserRegistration(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
-				ErrorCode:    "INVALID_JSON",
-				Message:      "Invalid input or empty json datat",
+				ErrorCode:    "INVALID_INPUT",
+				Message:      "Invalid input or empty json data",
 				ErrorDetails: err.Error(),
 			},
 		})

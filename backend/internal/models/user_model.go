@@ -10,7 +10,7 @@ type User struct {
 	// admin can do everything what user can do + approve/reject reports and delete them
 	// if more roles needed may be we can qmply use RBAC system // TODO:
 	IsAdmin                            bool     `gorm:"default:false"`
-	DeviceToken                        string   `json:"devicetoken" gorm:"column:fcmdevicetoken"`
+	DeviceToken                        string   `json:"devicetoken" gorm:"column:devicetoken"`
 	CachedLat                          *float64 `json:"cachedlat" gorm:"column:cachedlat"`
 	CachedLong                         *float64 `json:"cachedlong" gorm:"column:cachedlong"`
 	LocationCached                     bool     `json:"locationcached" gorm:"default:false"`

@@ -38,3 +38,9 @@ type ReportCreatedResponse struct {
 	Location    string `json:"location"`
 	Status      string `json:"status"`
 }
+
+type UserAccountInfoResponse struct {
+	UserName     string `json:"username"`
+	UserEmail    string `json:"email"`
+	UserLocation string `json:"location"`
+}

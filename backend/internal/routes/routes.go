@@ -7,10 +7,10 @@ import (
 )
 
 func SetUpRoutes(router *gin.Engine) {
-
 	//auth and middleware routes
 	router.POST("user/register", auth.UserRegistration)
 	router.POST("user/login", auth.UserLogin)
+	router.GET("api/user/:id", handler.GetUserInfo) // for account page (User Account)
 
 	//applying middlewares
 	authMiddlewareRouter := router.Group("/api")
@@ -20,6 +20,6 @@ func SetUpRoutes(router *gin.Engine) {
 		// authMiddlewareRouter.GET("/profile", auth.GetUserProfile)
 		authMiddlewareRouter.GET("/reports", handler.GetAllReportsByUserID)
 		authMiddlewareRouter.GET("/get_current_user", auth.GetUserProfileInfo)
+		authMiddlewareRouter.POST("/get_device_token", handler.GetAndStoreDeviceToken)
 	}
-
 }
