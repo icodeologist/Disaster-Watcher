@@ -10,6 +10,7 @@ func UserTrustScore(user models.User) int {
 	return -1
 }
 
+// report trust score
 func VerifyReportPostedByUser(report *models.Report, user models.User) error {
 	if !user.LocationCached || !report.ISLocationCached {
 		report.Status = "Unverified"
