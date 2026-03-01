@@ -20,10 +20,12 @@ func CachedUserCords(user *models.User) error {
 		return nil
 	}
 	// calling notinatim api
+	var location *models.Location
 	location, err := GetLATLONGfromUserLocation(user.Location)
 	if err != nil {
 		return fmt.Errorf(" ERROR : %v", err)
 	}
+	fmt.Println("Locaion : ", *location)
 	user.CachedLat = &location.Lat
 	user.CachedLong = &location.Long
 	user.LocationCached = true

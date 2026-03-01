@@ -10,41 +10,53 @@ func UserTrustScore(user models.User) int {
 	return -1
 }
 
-// if user is posting somewhere far from his location
-// if user has no posts
-// if there are no similar posts in that area
-// then simply make the post Unverified
 func VerifyReportPostedByUser(report *models.Report, user models.User) error {
-	// TODO: what if all the posts are unverfied or not near that location
+	if !user.LocationCached || !report.ISLocationCached {
+		report.Status = "Unverified"
+		return db.DB.Save(&report).Error
+	}
+	score := 0
 	radius := Haversine(*user.CachedLat, *user.CachedLong, *report.CachedLat, *report.CachedLong)
-	badPost := 0
-	if radius > 20 {
-		badPost += 1
+	if radius <= 20 {
+		score += 3
+	} else {
+		score -= 2
 	}
-	if user.TotalReportPosted == 0 {
-		badPost += 2
-	} else if user.TotalReportPosted > 0 {
-		if badPost >= 1 {
-			badPost -= 1
-		}
-	}
-	var similarReports []models.Report
-	if err := db.DB.Where("category=? AND id !=? AND created_at >= ?", report.Category, report.ID, report.CreatedAt.Add(-24*time.Hour)).Find(&similarReports).Error; err != nil {
-		return err
-	}
-	if len(similarReports) > 2 {
-		if badPost > 2 {
-			badPost -= 2
-		}
-	} else if len(similarReports) <= 2 {
-		badPost += 2
+	//check user reputation
+	switch {
+	case user.TotalReportPosted >= 10:
+		score += 3
+	case user.TotalReportPosted >= 3:
+		score += 1
+	case user.TotalReportPosted == 0:
+		score -= 1
 	}
 
-	if badPost <= 2 {
+	// check if similar report are posted near the user posted in a given time
+	var similarReportPosted []models.Report
+	err := db.DB.Where("category=? AND id != ? AND create_at BETWEEN ? AND ?",
+		report.Category,
+		report.ID,
+		report.CreatedAt.Add(-24*time.Hour),
+		report.CreatedAt,
+	).Find(&similarReportPosted).Error
+	if err != nil {
+		return err
+	}
+	switch {
+	case len(similarReportPosted) >= 5:
+		score += 3
+	case len(similarReportPosted) >= 2:
+		score += 1
+	case len(similarReportPosted) == 0:
+		score -= 1
+	}
+
+	if score >= 3 {
 		report.Status = "Verified"
 	} else {
 		report.Status = "Unverified"
 	}
-	db.DB.Save(&report)
-	return nil
+	return db.DB.Save(&report).Error
+
 }

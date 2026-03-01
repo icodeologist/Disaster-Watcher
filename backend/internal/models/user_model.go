@@ -22,10 +22,8 @@ type User struct {
 
 // this help during auth handlers
 type AuthInput struct {
-	Username       string `json:"username"`
-	Email          string `json:"email"`
-	Password       string `json:"password"`
-	Location       string `json:"location"`
-	AmdinSecretKey string `json:"adminkey"`
-	DeviceToken    string `json:"devicetoken"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Location string `json:"location"`
 }

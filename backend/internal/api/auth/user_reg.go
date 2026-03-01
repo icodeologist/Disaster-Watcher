@@ -62,6 +62,7 @@ func UserRegistration(c *gin.Context) {
 	user.Location = userInput.Location
 
 	err = utils.CachedUserCords(&user)
+	fmt.Println("Done with caching passwords")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Success: false,
@@ -141,23 +142,19 @@ func UserLogin(c *gin.Context) {
 		})
 		return
 	}
-	if userInput.AmdinSecretKey != "" {
-
-		// TODO: change the status code
-		if userInput.AmdinSecretKey != os.Getenv("ADMINCODE") {
-			c.JSON(http.StatusUnauthorized, models.ErrorResponse{
-				Success: false,
-				Error: models.Error{
-					ErrorCode: "INVALID_ADMIN_CREDENTIALS",
-					Message:   "Your admin secret key does not match",
-				},
-			})
-			return
-		}
-		userFound.IsAdmin = true
-		database.DB.Save(&userFound)
-	}
-
+	// if userInput.AmdinSecretKey != "" {
+	//
+	// 	// TODO: change the status code
+	// 	if userInput.AmdinSecretKey != os.Getenv("ADMINCODE") {
+	// 		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+	// 			Success: false,
+	// 			Error: models.Error{
+	// 				ErrorCode: "INVALID_ADMIN_CREDENTIALS",
+	// 				Message:   "Your admin secret key does not match",
+	// 			},
+	// 		})
+	// 		return
+	// 	}
 	generateToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"id":       userFound.ID,
 		"username": userFound.UserName,

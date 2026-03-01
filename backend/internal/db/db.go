@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"log"
 	"os"
 
 	"github.com/icodeologist/disasterwatch/internal/models"
@@ -14,10 +13,10 @@ import (
 var DB *gorm.DB
 var err error
 
-func Connect() {
+func Connect() error {
 	host := os.Getenv("HOST")
 	dbPort := os.Getenv("DBPORT")
-	user := os.Getenv("USER")
+	user := os.Getenv("DB_USER")
 	password := os.Getenv("PASSWORD")
 	dbName := os.Getenv("NAME")
 
@@ -27,12 +26,13 @@ func Connect() {
 	//open the connection to database
 	DB, err = gorm.Open(postgres.Open(dbUri), &gorm.Config{})
 	if err != nil {
-		log.Fatal(err)
+		return err
 	} else {
 		fmt.Println("Successfully connected to database")
 	}
 
 	DB.AutoMigrate(&models.Report{}, &models.User{})
+	return nil
 
 }
 
