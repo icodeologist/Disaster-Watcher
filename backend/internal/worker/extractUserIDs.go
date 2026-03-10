@@ -31,17 +31,7 @@ func StartExtractWorkers(n int, reportChannel <-chan models.Report, affUserIDCha
 	// start n of workers
 	// TODO: find real affected users
 	for i := 0; i < n; i++ {
-		go func(workerID int) {
-			for report := range reportChannel {
-				affUsers, err := utils.GetUsersAffectedByDisaster(report)
-				if err != nil {
-					log.Println("Finding affected users: Error occured : ", err)
-				}
-				for _, userID := range affUsers {
-					affUserIDChannel <- userID
-				}
-			}
-		}(i)
+		go utils.GetUsersAffectedByDisaster(reportChannel, affUserIDChannel)
 	}
 }
 
@@ -53,6 +43,7 @@ func StartNotificationWorker(n int, affUsersIdChannel <-chan uint) {
 			for userID := range affUsersIdChannel {
 				if err := db.DB.Where("id=?", userID).First(&user).Error; err != nil {
 					log.Printf("DATABASE_ERR : %v\n", err)
+					continue
 				}
 				go emailservice.SendEmail(user.Email)
 				fmt.Println("Email send to USER : ", user.UserName, "USER EMAIL :", user.Email)
