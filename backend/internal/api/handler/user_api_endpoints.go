@@ -16,25 +16,9 @@ import (
 	database "github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
 	"github.com/icodeologist/disasterwatch/internal/utils"
-	// "github.com/icodeologist/disasterwatch/internal/utils"
 )
 
-type WorkerServer struct {
-	Jobs chan uint
-}
-
-func NewWorkerServer(jobs chan uint) *WorkerServer {
-	return &WorkerServer{
-		Jobs: jobs,
-	}
-}
-
-/*
- user creates report at /disaster/user/create_report endpoint
- user posts with valid json and jwt auth token
-*/
-
-func (s *WorkerServer) CreateReport(c *gin.Context) {
+func (s *Server) CreateReport(c *gin.Context) {
 	var userReport models.Report
 	if err := c.ShouldBindJSON(&userReport); err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
@@ -54,41 +38,41 @@ func (s *WorkerServer) CreateReport(c *gin.Context) {
 	println("userID : ", userId)
 	userReport.UserId = userId.(uint)
 
-	// if err := database.DB.Create(&userReport).Error; err != nil {
-	// 	c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-	// 		Success: false,
-	// 		Error: models.Error{
-	// 			ErrorCode:    "DATABASE_ERR",
-	// 			ErrorDetails: err.Error(),
-	// 		},
-	// 	})
-	// 	return
-	// }
-	// if err := database.DB.Preload("User").First(&userReport, userReport.ID).Error; err != nil {
-	// 	c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-	// 		Success: false,
-	// 		Error: models.Error{
-	// 			ErrorCode:    "DATABASE_ERR",
-	// 			ErrorDetails: err.Error(),
-	// 		},
-	// 	})
-	// }
+	if err := database.DB.Create(&userReport).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Success: false,
+			Error: models.Error{
+				ErrorCode:    "DATABASE_ERR",
+				ErrorDetails: err.Error(),
+			},
+		})
+		return
+	}
+	if err := database.DB.Preload("User").First(&userReport, userReport.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Success: false,
+			Error: models.Error{
+				ErrorCode:    "DATABASE_ERR",
+				ErrorDetails: err.Error(),
+			},
+		})
+	}
 
-	// if err := utils.ConvertReportLocationTOLatAndLong(&userReport); err != nil {
-	// 	c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-	// 		Success: false,
-	// 		Error: models.Error{
-	// 			ErrorCode: "CACHING_COORDINATES_ERR",
-	// 			// FIX: Make something about this
-	// 			Message:      "Add the exact land mark not vague location",
-	// 			ErrorDetails: err.Error(),
-	// 		},
-	// 	})
-	// 	return
-	// }
+	if err := utils.ConvertReportLocationTOLatAndLong(&userReport); err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Success: false,
+			Error: models.Error{
+				ErrorCode: "CACHING_COORDINATES_ERR",
+				// FIX: Make something about this
+				Message:      "Add the exact land mark not vague location",
+				ErrorDetails: err.Error(),
+			},
+		})
+		return
+	}
 
 	select {
-	case s.Jobs <- userReport.ID:
+	case s.ReportChannel <- userReport:
 		c.JSON(http.StatusAccepted, models.SuccessResponse{
 			Success: true,
 			Data:    userReport,

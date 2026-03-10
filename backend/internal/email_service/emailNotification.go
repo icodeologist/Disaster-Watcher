@@ -2,43 +2,27 @@ package emailservice
 
 import (
 	"fmt"
-	"net/smtp"
+	// "net/smtp"
 )
 
-func SetUpEmailServer() (*smtp.Client, error) {
-	c, err := smtp.Dial("mail.example.com:25")
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
-}
-
-func SendEmail(c *smtp.Client, toEmail, fromEmail string) error {
-	if err := c.Mail(toEmail); err != nil {
-		return err
-	}
-	if err := c.Rcpt(fromEmail); err != nil {
-		return err
-	}
-
-	// send email
-	wc, err := c.Data()
-	if err != nil {
-		return err
-	}
-
-	_, err = fmt.Fprintf(wc, "THIS IS EMAIL BODY")
-	if err != nil {
-		return err
-	}
-	err = wc.Close()
-	if err != nil {
-		return err
-	}
-	err = c.Quit()
-	if err != nil {
-		return err
-	}
-	fmt.Println("Email sent")
-	return nil
+func SendEmail(to string) {
+	// smtpHost := "sandbox.smtp.mailtrap.io"
+	// smtpPort := "587"
+	// username := "80a92df47b164b"
+	// password := "f90eac08470a7a" // replace with your full password
+	// sender := "DisasterNotifierTeam@example.com"
+	// rc := []string{to}
+	//
+	// subject := "Subject: Disaster happened nearby!\r\n"
+	// body := "Please be careful and take care of the precuations measures untilt the !\r\n"
+	// message := []byte(subject + "\r\n" + body)
+	//
+	// auth := smtp.PlainAuth("", username, password, smtpHost)
+	//
+	// err := smtp.SendMail(smtpHost+":"+smtpPort, auth, sender, rc, message)
+	// if err != nil {
+	// 	fmt.Println("Error:", err)
+	// 	return
+	// }
+	fmt.Println("Email sent to ", to)
 }

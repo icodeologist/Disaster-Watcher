@@ -10,7 +10,6 @@ import (
 	"github.com/icodeologist/disasterwatch/internal/models"
 )
 
-// ForwardGeoCoding takes a location string and returns the latitude and longitude using the Nominatim API
 func GetLATLONGfromUserLocation(location string) (*models.Location, error) {
 	if location == "" {
 		err := fmt.Errorf("Cannot geocode the empty location.")
@@ -37,17 +36,14 @@ func GetLATLONGfromUserLocation(location string) (*models.Location, error) {
 		return nil, fmt.Errorf("Failed to read the response body.")
 	}
 
-	// GeocodingResult is a slice of results and parsing it using Sscanf to get (lat,long)float
 	var geocodingresults []models.GeocodingResult
 	err = json.Unmarshal(body, &geocodingresults)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to parse the incoming request: %v", err)
 	}
-	fmt.Println("Len of GeocodingResult ", geocodingresults)
 	if len(geocodingresults) == 0 {
 		return nil, fmt.Errorf("No matching results.")
 	}
-	// sscanf convertes strings (lat long) to float64
 	var lat, long float64
 
 	fmt.Sscanf(geocodingresults[0].Latitude, "%f", &lat)

@@ -6,7 +6,7 @@ import (
 	"github.com/icodeologist/disasterwatch/internal/api/handler"
 )
 
-func SetUpRoutes(router *gin.Engine, server *handler.WorkerServer) {
+func SetUpRoutes(router *gin.Engine, server *handler.Server) {
 
 	//auth and middleware routes
 	router.POST("user/register", auth.UserRegistration)
@@ -21,7 +21,6 @@ func SetUpRoutes(router *gin.Engine, server *handler.WorkerServer) {
 		// authMiddlewareRouter.GET("/profile", auth.GetUserProfile)
 		authMiddlewareRouter.GET("/reports", handler.GetAllReportsByUserID)
 		authMiddlewareRouter.GET("/get_current_user", auth.GetUserProfileInfo)
-		authMiddlewareRouter.POST("/get_device_token", handler.GetAndStoreDeviceToken)
 		authMiddlewareRouter.GET("report/:id", handler.GetReportById)
 	}
 }

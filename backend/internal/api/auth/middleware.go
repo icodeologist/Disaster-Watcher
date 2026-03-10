@@ -18,7 +18,6 @@ import (
 // CheckAuth is a middleware function that checks for a valid JWT token in the Authorization header
 func AuthCheckingMiddleware(c *gin.Context) {
 	authHeader := c.GetHeader("Authorization")
-	fmt.Println("auth header :", authHeader)
 	if authHeader == "" {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 			"error": "Authorization header is required",
@@ -27,7 +26,6 @@ func AuthCheckingMiddleware(c *gin.Context) {
 	}
 
 	authToken := strings.Split(authHeader, " ")
-	fmt.Println("auth token :", authToken)
 
 	if len(authToken) != 2 || authToken[0] != "Bearer" {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{

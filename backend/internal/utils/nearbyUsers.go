@@ -42,23 +42,22 @@ func NearByTrustedUsers(nearbyUserIDS []uint) ([]uint, error) {
 }
 
 // Users in the distance from the report posted in  radius like 20km?
-func GetUsersAffectedByDisaster(report models.Report) ([]models.Report, error) {
-	var affectedUsers []models.Report
-	var allUsers []models.Report
+func GetUsersAffectedByDisaster(report models.Report) ([]uint, error) {
+	var affectedUsers []uint
+	var allUsers []models.User
 	if err := db.DB.Find(&allUsers).Error; err != nil {
 		return nil, err
 	}
-	for _, user := range affectedUsers {
+	for _, user := range allUsers {
 		userLat := user.CachedLat
 		userLong := user.CachedLong
-		if !user.ISLocationCached || !report.ISLocationCached {
+		if !user.LocationCached || !report.ISLocationCached {
 			continue
 		}
 		radius := Haversine(*report.CachedLat, *report.CachedLong, *userLat, *userLong)
 		if radius <= 20 {
-			affectedUsers = append(affectedUsers, user)
+			affectedUsers = append(affectedUsers, user.ID)
 		}
-
 	}
 	return affectedUsers, nil
 }
