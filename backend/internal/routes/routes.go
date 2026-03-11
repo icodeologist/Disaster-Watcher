@@ -8,19 +8,23 @@ import (
 
 func SetUpRoutes(router *gin.Engine, server *handler.Server) {
 
-	//auth and middleware routes
 	router.POST("user/register", auth.UserRegistration)
 	router.POST("user/login", auth.UserLogin)
 	router.GET("api/user/:id", handler.GetUserInfo) // for account page (User Account)
 
-	//applying middlewares
+	// Rate limit middleware for external email provider
+
 	authMiddlewareRouter := router.Group("/api")
+	rateLimiterPlusAuthMiddleware := router.Group("/api")
+	rateLimiterPlusAuthMiddleware.Use(auth.AuthCheckingMiddleware)
+	rateLimiterPlusAuthMiddleware.Use(auth.EmailRateLimitMiddleware())
 	authMiddlewareRouter.Use(auth.AuthCheckingMiddleware)
 	{
-		authMiddlewareRouter.POST("/create", server.CreateReport)
 		// authMiddlewareRouter.GET("/profile", auth.GetUserProfile)
+		rateLimiterPlusAuthMiddleware.POST("/reports", server.CreateReport)
 		authMiddlewareRouter.GET("/reports", handler.GetAllReportsByUserID)
 		authMiddlewareRouter.GET("/get_current_user", auth.GetUserProfileInfo)
 		authMiddlewareRouter.GET("report/:id", handler.GetReportById)
 	}
+
 }

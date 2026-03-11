@@ -10,6 +10,7 @@ import (
 
 	database "github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
+	"golang.org/x/time/rate"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
@@ -100,4 +101,24 @@ func AdminMiddleware(c *gin.Context) {
 	}
 	c.Set("AdminUser", currentAuthenticatedUser)
 	c.Next()
+}
+
+var Emaillimiter = rate.NewLimiter(2, 5)
+
+func EmailRateLimitMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// get the gins underlying context
+		if !Emaillimiter.Allow() {
+			c.JSON(http.StatusTooManyRequests, models.ErrorResponse{
+				Success: false,
+				Error: models.Error{
+					ErrorCode: "TOO_MANY_REQS",
+					Message:   "Too many requests",
+				},
+			})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
 }
