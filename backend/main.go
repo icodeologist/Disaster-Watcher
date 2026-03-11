@@ -1,9 +1,6 @@
 package main
 
 import (
-
-	// "hash/adler32"
-	// "time"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -38,4 +35,5 @@ func main() {
 	r := gin.Default()
 	routes.SetUpRoutes(r, server)
 	r.Run(":3000")
+
 }

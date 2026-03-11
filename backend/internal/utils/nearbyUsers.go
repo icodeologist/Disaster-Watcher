@@ -3,6 +3,7 @@ package utils
 import (
 	"github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
+	"log"
 )
 
 func GetNearbyUsers(atLat float64, atLong float64, radiusInKm float64) ([]uint, error) {
@@ -42,22 +43,26 @@ func NearByTrustedUsers(nearbyUserIDS []uint) ([]uint, error) {
 }
 
 // Users in the distance from the report posted in  radius like 20km?
-func GetUsersAffectedByDisaster(report models.Report) ([]uint, error) {
-	var affectedUsers []uint
-	var allUsers []models.User
-	if err := db.DB.Find(&allUsers).Error; err != nil {
-		return nil, err
-	}
-	for _, user := range allUsers {
-		userLat := user.CachedLat
-		userLong := user.CachedLong
-		if !user.LocationCached || !report.ISLocationCached {
-			continue
+func GetUsersAffectedByDisaster(reportChan <-chan models.Report, affectedUserIdsChan chan<- uint) {
+	for i := 0; i < 5; i++ {
+		var allUsers []models.User
+		if err := db.DB.Find(&allUsers).Error; err != nil {
+			log.Printf("Error : %v\n", err.Error())
 		}
-		radius := Haversine(*report.CachedLat, *report.CachedLong, *userLat, *userLong)
-		if radius <= 20 {
-			affectedUsers = append(affectedUsers, user.ID)
+		for report := range reportChan {
+			for _, user := range allUsers {
+				userLat := user.CachedLat
+				userLong := user.CachedLong
+				if !user.LocationCached || !report.ISLocationCached {
+					continue
+				}
+				radius := Haversine(*report.CachedLat, *report.CachedLong, *userLat, *userLong)
+				if radius <= 20 {
+					affectedUserIdsChan <- user.ID
+				}
+			}
+
 		}
 	}
-	return affectedUsers, nil
+
 }

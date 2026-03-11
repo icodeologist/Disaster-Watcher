@@ -107,7 +107,6 @@ var Emaillimiter = rate.NewLimiter(2, 5)
 
 func EmailRateLimitMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// get the gins underlying context
 		if !Emaillimiter.Allow() {
 			c.JSON(http.StatusTooManyRequests, models.ErrorResponse{
 				Success: false,

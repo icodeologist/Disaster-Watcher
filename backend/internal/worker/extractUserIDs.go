@@ -29,7 +29,7 @@ func PrintInfo(affUsersIdChannel chan uint) {
 
 func StartExtractWorkers(n int, reportChannel <-chan models.Report, affUserIDChannel chan<- uint) {
 	// start n of workers
-	// TODO: find real affected users
+	// TODO: add a recover defer function for each go routines spawned
 	for i := 0; i < n; i++ {
 		go utils.GetUsersAffectedByDisaster(reportChannel, affUserIDChannel)
 	}
