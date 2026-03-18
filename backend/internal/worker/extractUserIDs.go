@@ -35,6 +35,7 @@ func PrintInfo(affUsersIdChannel chan uint) {
 func StartExtractWorkers(n int, reportChannel <-chan models.Report, affUserIDChannel chan<- uint) {
 	// start n of workers
 	// TODO: add a recover defer function for each go routines spawned
+	log.Println("Extracting User IDs: ", n, " WORKERS STARTED")
 	for i := 0; i < n; i++ {
 		go utils.GetUsersAffectedByDisaster(reportChannel, affUserIDChannel)
 	}
@@ -71,17 +72,21 @@ func StartNotificationWorker(n int, affUsersIdChannel <-chan uint, failedEmailsC
 					log.Println("Error : ", err)
 					return
 				}
-				fmt.Println("Hello there")
+				log.Printf("[SENDING TO ID %v] [1st TIME]", userID)
 				err := emailservice.SendEmail(user.Email)
+				log.Printf("[FAILED ID %v] [PUSHING TO FAILEDMESSAGECHANNEL]", userID)
+
 				if err != nil {
 					failedMessage := &FailedEmailMessage{
 						UserId:    userID,
 						User:      user,
 						Status:    "not sent",
 						Message:   "Message",
-						RetryTime: 2,
+						RetryTime: 1,
 					}
 					failedEmailsChan <- *failedMessage
+				} else {
+					log.Printf("[SUCCESS : %v]\n", userID)
 				}
 
 			}
@@ -90,6 +95,7 @@ func StartNotificationWorker(n int, affUsersIdChannel <-chan uint, failedEmailsC
 }
 
 func StartFailedEmailSendingWorker(n int, maxTries int, failedEmailsChan chan FailedEmailMessage, deadMessageChannel chan FailedEmailMessage) {
+	log.Println("STARTED RETRYING FAILED MESSAGES WORKERS")
 	for i := 0; i < n; i++ {
 		go func(id int) {
 			for failedUserIDs := range failedEmailsChan {
@@ -104,11 +110,15 @@ func StartFailedEmailSendingWorker(n int, maxTries int, failedEmailsChan chan Fa
 				}
 				if fMsg.RetryTime <= maxTries {
 					time.Sleep(time.Duration(timeTOwait) * time.Second)
+					log.Printf("[SENDING FAILED MESSAGE WITH ID %v] [RETRY %v] [DELAY %v] \n", fMsg.UserId, fMsg.RetryTime, fMsg.RetryDelay)
 					err := emailservice.SendEmail(failedUserIDs.User.Email)
 					if err != nil {
 						failedEmailsChan <- *fMsg
+					} else {
+						log.Printf("[SUCCESS WITH ID %v] [FAILED COUNT %v] \n", fMsg.UserId, fMsg.RetryTime)
 					}
 				} else {
+					log.Printf("[MAX TRIES REACHED FOR ID : %v] [RETRY COUNT : %v]\n", fMsg.UserId, fMsg.RetryTime)
 					deadMessageChannel <- *fMsg
 				}
 			}

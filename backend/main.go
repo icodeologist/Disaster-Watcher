@@ -17,11 +17,15 @@ import (
 )
 
 // everything about main here
+//
 // set up and calling all the essentials
 
 func main() {
 	reportsChannel := make(chan models.Report, 10)
+	failedEmailsChan := make(chan worker.FailedEmailMessage, 10)
+	deadLetterChannel := make(chan worker.FailedEmailMessage, 10)
 	affectedUsersIDChannel := make(chan uint, 10)
+	maxRetries := 5
 	if err := db.Connect(); err != nil {
 		log.Fatal(err)
 	}
@@ -30,7 +34,8 @@ func main() {
 		AffectedUsersIdChannel: affectedUsersIDChannel,
 	}
 	worker.StartExtractWorkers(5, reportsChannel, affectedUsersIDChannel)
-	worker.StartNotificationWorker(5, affectedUsersIDChannel)
+	worker.StartNotificationWorker(5, affectedUsersIDChannel, failedEmailsChan)
+	worker.StartFailedEmailSendingWorker(5, maxRetries, failedEmailsChan, deadLetterChannel)
 
 	r := gin.Default()
 	routes.SetUpRoutes(r, server)
