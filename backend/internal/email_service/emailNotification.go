@@ -3,9 +3,10 @@ package emailservice
 import (
 	"fmt"
 	// "net/smtp"
+	"math/rand/v2"
 )
 
-func SendEmail(to string) {
+func SendEmail(to string) error {
 	// smtpHost := "sandbox.smtp.mailtrap.io"
 	// smtpPort := "587"
 	// username := "80a92df47b164b"
@@ -24,5 +25,14 @@ func SendEmail(to string) {
 	// 	fmt.Println("Error:", err)
 	// 	return
 	// }
-	fmt.Println("Email sent to ", to)
+
+	n := rand.IntN(100)
+	println("N : ", n)
+	res := n % 2
+	if res == 0 {
+		fmt.Println("Email is sent to ", to)
+		return nil
+	} else {
+		return fmt.Errorf("Email Failed")
+	}
 }

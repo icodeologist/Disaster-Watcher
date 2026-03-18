@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"math"
 	"time"
@@ -13,23 +12,6 @@ import (
 	"github.com/icodeologist/disasterwatch/internal/utils"
 	"golang.org/x/time/rate"
 )
-
-func CallExtractUserIDWorker(reportChannel chan models.Report, affUsersIdChannel chan uint) {
-	for report := range reportChannel {
-		go ExtractUserIDs(report, affUsersIdChannel)
-	}
-}
-
-func ExtractUserIDs(report models.Report, affUsersIDsChannle chan uint) {
-	affUsersIDsChannle <- uint(report.UserId)
-}
-
-func PrintInfo(affUsersIdChannel chan uint) {
-	println("Len of affected users CHANNEL :", len(affUsersIdChannel))
-	for id := range affUsersIdChannel {
-		fmt.Println("USERID :", id)
-	}
-}
 
 // Get the users effected from the disasters and push their id to affuserchannel
 func StartExtractWorkers(n int, reportChannel <-chan models.Report, affUserIDChannel chan<- uint) {
@@ -74,9 +56,8 @@ func StartNotificationWorker(n int, affUsersIdChannel <-chan uint, failedEmailsC
 				}
 				log.Printf("[SENDING TO ID %v] [1st TIME]", userID)
 				err := emailservice.SendEmail(user.Email)
-				log.Printf("[FAILED ID %v] [PUSHING TO FAILEDMESSAGECHANNEL]", userID)
-
 				if err != nil {
+					log.Printf("[FAILED] [ID : %v] [PUSHING TO FAILED MESSAGE CHANNEL]\n", userID)
 					failedMessage := &FailedEmailMessage{
 						UserId:    userID,
 						User:      user,
@@ -86,7 +67,7 @@ func StartNotificationWorker(n int, affUsersIdChannel <-chan uint, failedEmailsC
 					}
 					failedEmailsChan <- *failedMessage
 				} else {
-					log.Printf("[SUCCESS : %v]\n", userID)
+					log.Printf("[SUCCESS] [ID : %v] [NOTIFICATION SENT]\n", userID)
 				}
 
 			}
@@ -110,15 +91,15 @@ func StartFailedEmailSendingWorker(n int, maxTries int, failedEmailsChan chan Fa
 				}
 				if fMsg.RetryTime <= maxTries {
 					time.Sleep(time.Duration(timeTOwait) * time.Second)
-					log.Printf("[SENDING FAILED MESSAGE WITH ID %v] [RETRY %v] [DELAY %v] \n", fMsg.UserId, fMsg.RetryTime, fMsg.RetryDelay)
+					log.Printf("[RETRY TIME : %v] [ID : %v] [DELAY : %v]\n", fMsg.RetryTime, fMsg.UserId, fMsg.RetryDelay)
 					err := emailservice.SendEmail(failedUserIDs.User.Email)
 					if err != nil {
 						failedEmailsChan <- *fMsg
 					} else {
-						log.Printf("[SUCCESS WITH ID %v] [FAILED COUNT %v] \n", fMsg.UserId, fMsg.RetryTime)
+						log.Printf("[SUCCESS] [ID : %v] [FAILED COUNT : %v]\n", fMsg.UserId, fMsg.RetryTime)
 					}
 				} else {
-					log.Printf("[MAX TRIES REACHED FOR ID : %v] [RETRY COUNT : %v]\n", fMsg.UserId, fMsg.RetryTime)
+					log.Printf("[FAILED - MAX TRIES REACHED] [ID : %v] [PUSHED TO DEAD CHANNEL]", fMsg.UserId)
 					deadMessageChannel <- *fMsg
 				}
 			}
