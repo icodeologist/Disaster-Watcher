@@ -1,9 +1,11 @@
 package utils
 
 import (
+	"time"
+
 	"github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
-	"time"
+	"log"
 )
 
 func UserTrustScore(user models.User) int {
@@ -11,10 +13,19 @@ func UserTrustScore(user models.User) int {
 }
 
 // report trust score
-func VerifyReportPostedByUser(report *models.Report, user models.User) error {
+func VerifyReportPostedByUser(report *models.Report, user models.User, reportChannel chan models.Report) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("RECOVERED IN VERIFICATION WORKERS : %v\n", r)
+		}
+	}()
 	if !user.LocationCached || !report.ISLocationCached {
 		report.Status = "Unverified"
-		return db.DB.Save(&report).Error
+		err := db.DB.Save(&report).Error
+		if err != nil {
+			log.Printf("Error Saving Report : %v\n", err)
+		}
+		return
 	}
 	score := 0
 	radius := Haversine(*user.CachedLat, *user.CachedLong, *report.CachedLat, *report.CachedLong)
@@ -35,14 +46,14 @@ func VerifyReportPostedByUser(report *models.Report, user models.User) error {
 
 	// check if similar report are posted near the user posted in a given time
 	var similarReportPosted []models.Report
-	err := db.DB.Where("category=? AND id != ? AND create_at BETWEEN ? AND ?",
+	err := db.DB.Where("category=? AND id != ? AND created_at BETWEEN ? AND ?",
 		report.Category,
 		report.ID,
 		report.CreatedAt.Add(-24*time.Hour),
 		report.CreatedAt,
 	).Find(&similarReportPosted).Error
 	if err != nil {
-		return err
+		log.Printf("Error Fetching similar Report : %v\n", err)
 	}
 	switch {
 	case len(similarReportPosted) >= 5:
@@ -58,6 +69,19 @@ func VerifyReportPostedByUser(report *models.Report, user models.User) error {
 	} else {
 		report.Status = "Unverified"
 	}
-	return db.DB.Save(&report).Error
+	err = db.DB.Save(&report).Error
+	if err != nil {
+		log.Printf("Error Saving Report : %v\n", err)
+	}
+	switch {
+	case report.Status == "Verified":
+		log.Printf("[VERIFICATION RESULT] [ID : %v] [STATUS : %v] [SCORE : %v]", report.ID, report.Status, score)
+		reportChannel <- *report
+	default:
+		err := db.DB.Delete(&report).Error
+		if err != nil {
+			log.Printf("Error While deleting report : %v\n", err)
+		}
+	}
 
 }

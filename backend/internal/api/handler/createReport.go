@@ -55,6 +55,7 @@ func (s *Server) CreateReport(c *gin.Context) {
 				ErrorDetails: err.Error(),
 			},
 		})
+		return
 	}
 
 	if err := utils.ConvertReportLocationTOLatAndLong(&userReport); err != nil {
@@ -69,9 +70,13 @@ func (s *Server) CreateReport(c *gin.Context) {
 		})
 		return
 	}
+	verificationMsg := VerificationMessage{
+		Report: userReport,
+		User:   userReport.User,
+	}
 
 	select {
-	case s.ReportChannel <- userReport:
+	case s.VerificationChannel <- verificationMsg:
 		c.JSON(http.StatusAccepted, models.SuccessResponse{
 			Success: true,
 			Data:    userReport,

@@ -46,7 +46,7 @@ func NearByTrustedUsers(nearbyUserIDS []uint) ([]uint, error) {
 func GetUsersAffectedByDisaster(reportChan <-chan models.Report, affectedUserIdsChan chan<- uint) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("RECOVERED IN STARTING EXTRACTION WORKER : %v", r)
+			log.Printf("RECOVERED IN STARTING EXTRACTION WORKER : %v\n", r)
 		}
 	}()
 	var allUsers []models.User
