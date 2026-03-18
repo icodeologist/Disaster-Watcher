@@ -44,25 +44,26 @@ func NearByTrustedUsers(nearbyUserIDS []uint) ([]uint, error) {
 
 // Users in the distance from the report posted in  radius like 20km?
 func GetUsersAffectedByDisaster(reportChan <-chan models.Report, affectedUserIdsChan chan<- uint) {
-	for i := 0; i < 5; i++ {
-		var allUsers []models.User
-		if err := db.DB.Find(&allUsers).Error; err != nil {
-			log.Printf("Error : %v\n", err.Error())
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("RECOVERED IN STARTING EXTRACTION WORKER : %v", r)
 		}
-		for report := range reportChan {
-			for _, user := range allUsers {
-				userLat := user.CachedLat
-				userLong := user.CachedLong
-				if !user.LocationCached || !report.ISLocationCached {
-					continue
-				}
-				radius := Haversine(*report.CachedLat, *report.CachedLong, *userLat, *userLong)
-				if radius <= 20 {
-					affectedUserIdsChan <- user.ID
-				}
+	}()
+	var allUsers []models.User
+	if err := db.DB.Find(&allUsers).Error; err != nil {
+		log.Printf("Error : %v\n", err.Error())
+	}
+	for report := range reportChan {
+		for _, user := range allUsers {
+			userLat := user.CachedLat
+			userLong := user.CachedLong
+			if !user.LocationCached || !report.ISLocationCached {
+				continue
 			}
-
+			radius := Haversine(*report.CachedLat, *report.CachedLong, *userLat, *userLong)
+			if radius <= 20 {
+				affectedUserIdsChan <- user.ID
+			}
 		}
 	}
-
 }

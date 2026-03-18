@@ -16,7 +16,6 @@ import (
 // Get the users effected from the disasters and push their id to affuserchannel
 func StartExtractWorkers(n int, reportChannel <-chan models.Report, affUserIDChannel chan<- uint) {
 	// start n of workers
-	// TODO: add a recover defer function for each go routines spawned
 	log.Println("Extracting User IDs: ", n, " WORKERS STARTED")
 	for i := 0; i < n; i++ {
 		go utils.GetUsersAffectedByDisaster(reportChannel, affUserIDChannel)
@@ -42,6 +41,12 @@ func StartNotificationWorker(n int, affUsersIdChannel <-chan uint, failedEmailsC
 
 	for i := 0; i < n; i++ {
 		go func(id int) {
+			//recover if this go routiner panicks at some point
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("RECOVERED IN NOTIFICATION WORKER : %v", r)
+				}
+			}()
 			for userID := range affUsersIdChannel {
 				var user models.User
 				if err := db.DB.Where("id=?", userID).First(&user).Error; err != nil {
@@ -79,6 +84,12 @@ func StartFailedEmailSendingWorker(n int, maxTries int, failedEmailsChan chan Fa
 	log.Println("STARTED RETRYING FAILED MESSAGES WORKERS")
 	for i := 0; i < n; i++ {
 		go func(id int) {
+			//recover if this go routiner panicks at some point
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("RECOVERED IN FAILED NOTIFICATION WORKER : %v", r)
+				}
+			}()
 			for failedUserIDs := range failedEmailsChan {
 				timeTOwait := math.Pow(2, float64(failedUserIDs.RetryTime))
 				fMsg := &FailedEmailMessage{
