@@ -34,7 +34,6 @@ func (s *Server) CreateReport(c *gin.Context) {
 	if !exists {
 		log.Fatalf("%v user id does not exist", userId)
 	}
-	println("userID : ", userId)
 	userReport.UserId = userId.(uint)
 
 	if err := database.DB.Create(&userReport).Error; err != nil {

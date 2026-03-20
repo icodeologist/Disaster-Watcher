@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -171,6 +172,7 @@ func UserLogin(c *gin.Context) {
 			},
 		})
 	}
+	log.Println("Login successfull YOUR token : ", jwtToken)
 	c.JSON(http.StatusOK, models.SuccessResponse{
 		Success: true,
 		Data:    jwtToken,
