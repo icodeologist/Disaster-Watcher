@@ -6,7 +6,7 @@ import (
 	"github.com/icodeologist/disasterwatch/internal/api/handler"
 )
 
-func SetUpRoutes(router *gin.Engine, server *handler.Server, rateLimiter *auth.HttpRateLimiterMIddleware) {
+func SetUpRoutes(router *gin.Engine, server *handler.Server, rateLimiter *auth.RateLimitMiddleware) {
 	router.Use(rateLimiter.RateLimitingMiddelware)
 
 	router.POST("user/register", auth.UserRegistration)
@@ -17,6 +17,7 @@ func SetUpRoutes(router *gin.Engine, server *handler.Server, rateLimiter *auth.H
 
 	authMiddlewareRouter := router.Group("/api")
 	authMiddlewareRouter.Use(auth.AuthCheckingMiddleware)
+	// authMiddlewareRouter.Use(rateLimiter.RateLimitingMiddelware)
 	{
 		// authMiddlewareRouter.GET("/profile", auth.GetUserProfile)
 		authMiddlewareRouter.POST("/reports", server.CreateReport)
