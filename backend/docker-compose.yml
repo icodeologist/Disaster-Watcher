@@ -1,0 +1,28 @@
+version: '3.8'
+services: 
+  postgres:
+    image: postgres:15
+    environment: 
+      - POSTGRES_DB=disasterdb
+      - POSTGRES_USER=${DBUSER}
+      - POSTGRES_PASSWORD=${PASSWORD}
+    env_file: ./.env
+    volumes:
+      - postgers-db-volume:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - postgres-db-network
+  app:
+    build: .
+    depends_on:
+      - postgres
+    env_file: ./.env
+    ports:
+      - "3000:3000"
+    networks:
+      - postgres-db-network
+volumes:
+  postgers-db-volume:
+networks:
+  postgres-db-network:
