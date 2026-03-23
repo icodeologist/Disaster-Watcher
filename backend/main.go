@@ -1,20 +1,17 @@
 package main
 
 import (
-	"log"
-
 	"github.com/gin-gonic/gin"
 	"github.com/icodeologist/disasterwatch/internal/api/auth"
 	"github.com/icodeologist/disasterwatch/internal/api/handler"
 	"github.com/icodeologist/disasterwatch/internal/worker"
+	"log"
 
 	"github.com/icodeologist/disasterwatch/internal/db"
-	"github.com/icodeologist/disasterwatch/internal/routes"
 
 	"github.com/icodeologist/disasterwatch/internal/models"
-	//
-	//
-	// "github.com/icodeologist/disasterwatch/internal/routes"
+
+	"github.com/icodeologist/disasterwatch/internal/routes"
 )
 
 // everything about main here
@@ -41,10 +38,12 @@ func main() {
 	worker.StartNotificationWorker(5, affectedUsersIDChannel, failedEmailsChan)
 	worker.StartFailedEmailSendingWorker(5, maxRetries, failedEmailsChan, deadLetterChannel)
 
-	ratelimiter := auth.NewHTTPRateLimiterMiddleware(10, 10)
-
+	ratelimitMiddleware := auth.NewRateLimiterMiddleware(1, 10)
 	r := gin.Default()
-	routes.SetUpRoutes(r, server, ratelimiter)
+	routes.SetUpRoutes(r, server, ratelimitMiddleware)
 	r.Run(":3000")
+	// fmt.Println("Starting prometheus server endpoint")
+	// CallProm()
+	// fmt.Println("Started")
 
 }
