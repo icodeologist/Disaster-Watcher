@@ -1,12 +1,14 @@
+TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InJ5YW5AZXhhbXBsZS5jb20iLCJleHAiOjE3NzUwMTE3MjIsImlkIjo2LCJ1c2VybmFtZSI6InJ5YW5fc2NvdHQifQ.eDbGB0uXLMbW2EtzvNmuaZEx1YnKeNb1vXd-D4rNmOM"
 API_URL=http://localhost:3000/api/reports
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImRlbkBleGFtcGxlLmNvbSIsImV4cCI6MTc3Mzk2ODYzMiwiaWQiOjIsInVzZXJuYW1lIjoiZGVuIn0.WUB81fAuGHgxS-WIIRHm6BQawKPKK1Nkm3rXvIceQj4"
-BODY='{"category":"flood","description":"test","location":"Vijayanagar, Mysuru","priority":"high","status":"unverified"}'
+BODY='{"category":"flood","description":"test","location":"Pflugerville, Texas, USA","priority":"high","status":"unverified"}'
 
 
 LOGIN_URL=http://localhost:3000/user/login
-LOGIN_BODY='{"email":"den@example.com", "password":"pichu"}'
+REGI_URL=http://localhost:3000/user/register
+LOGIN_BODY='{"email":"ryan@example.com", "password":"pass1234"}'
+REGI_BODY='{"username":"den", "email":"den@example.com","password":"1234","location":"kalasa, India"}'
 
-one-time:
+five-con:
 	hey -n 5 -c 5 \
 	-m POST \
 	-H "Content-Type: application/json" \
@@ -45,3 +47,8 @@ log-den:
 		-H "Content-Type: application/json" \
 		-d $(LOGIN_BODY) \
 		-v
+reg-den:
+	curl -X POST $(REGI_URL) \
+		-H "Content-Type: application/json" \
+		-d $(REGI_BODY) \
+		-v 

@@ -2,23 +2,25 @@ package db
 
 import (
 	"fmt"
+	"github.com/icodeologist/disasterwatch/internal/models"
+	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"os"
-
-	"github.com/icodeologist/disasterwatch/internal/models"
-	"github.com/redis/go-redis/v9"
 )
 
 var DB *gorm.DB
-var err error
 
 func Connect() error {
-	host := os.Getenv("HOST")
-	dbPort := os.Getenv("DBPORT")
-	user := os.Getenv("DB_USER")
-	password := os.Getenv("PASSWORD")
-	dbName := os.Getenv("NAME")
+	envFile, err := godotenv.Read(".env")
+	if err != nil {
+		return err
+	}
+	host := envFile["HOST"]
+	dbPort := envFile["DBPORT"]
+	user := envFile["DBUSER"]
+	password := envFile["PASSWORD"]
+	dbName := envFile["NAME"]
 
 	//connecting to database
 	dbUri := fmt.Sprintf("host=%s user=%s dbname=%s sslmode=disable password=%v port=%v", host, user, dbName, password, dbPort)

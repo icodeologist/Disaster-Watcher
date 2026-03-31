@@ -7,7 +7,7 @@ import (
 )
 
 func SetUpRoutes(router *gin.Engine, server *handler.Server, rateLimiter *auth.RateLimitMiddleware) {
-	router.Use(rateLimiter.RateLimitingMiddelware)
+	// router.Use(rateLimiter.RateLimitingMiddelware)
 
 	router.POST("user/register", auth.UserRegistration)
 	router.POST("user/login", auth.UserLogin)

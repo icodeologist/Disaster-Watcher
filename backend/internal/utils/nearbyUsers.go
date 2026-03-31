@@ -1,9 +1,12 @@
 package utils
 
 import (
+	"context"
+	"log"
+	"sync"
+
 	"github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
-	"log"
 )
 
 func GetNearbyUsers(atLat float64, atLong float64, radiusInKm float64) ([]uint, error) {
@@ -43,17 +46,24 @@ func NearByTrustedUsers(nearbyUserIDS []uint) ([]uint, error) {
 }
 
 // Users in the distance from the report posted in  radius like 20km?
-func GetUsersAffectedByDisaster(reportChan <-chan models.Report, affectedUserIdsChan chan<- uint) {
+func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUsers []models.User, reportChan <-chan models.Report, affectedUserIdsChan chan<- uint) {
+	log.Printf("[ALL USER] count %d users \n", len(allUsers))
+	defer wg.Done()
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("RECOVERED IN STARTING EXTRACTION WORKER : %v\n", r)
 		}
 	}()
-	var allUsers []models.User
-	if err := db.DB.Find(&allUsers).Error; err != nil {
-		log.Printf("Error : %v\n", err.Error())
-	}
-	for report := range reportChan {
+	// for normal operation flow
+	// worker sit in for select watiing for jobs
+	// if I interrupt or railway sends sigTERM then its shutdown flow
+	// workerContext channel close -> every worker is CTX.DONE() fired
+	// idle worker sees ctx.Done() -> finishes wg.DONE()
+	// busy workers just finish the process come back and see ctx.DONE()
+	// wg.DONE() fires
+	// wg.WAIT() in main unblocks and we shutdown
+	//
+	processReport := func(report models.Report) {
 		for _, user := range allUsers {
 			userLat := user.CachedLat
 			userLong := user.CachedLong
@@ -62,8 +72,33 @@ func GetUsersAffectedByDisaster(reportChan <-chan models.Report, affectedUserIds
 			}
 			radius := Haversine(*report.CachedLat, *report.CachedLong, *userLat, *userLong)
 			if radius <= 20 {
-				affectedUserIdsChan <- user.ID
+				// incase if the affectedUserIdsChan is full and incase of blocking
+				// only if the shutdonw signal is fired instead of waiting just check if fired and return
+				// Because if downstream workers are already left this will keep hanging
+				select {
+				case affectedUserIdsChan <- user.ID:
+					// if this case blocked we just drop the work
+				case <-ctx.Done():
+					log.Println("Shutdown fired. exiting")
+					return
+				}
 			}
+		}
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			if len(reportChan) == 0 {
+				log.Printf("GetAffected user worker cancelled, exiting\n")
+				return
+			} else if len(reportChan) > 0 {
+				log.Printf("EXTRACTION WORKER [DRAINING] REMAINING JOBS \n")
+				report := <-reportChan
+				processReport(report)
+			}
+		case report := <-reportChan:
+			log.Println("Started processing report")
+			processReport(report)
 		}
 	}
 }

@@ -2,11 +2,12 @@ version: '3.8'
 services: 
   postgres:
     image: postgres:15
-    environment: 
-      - POSTGRES_DB=disasterdb
-      - POSTGRES_USER=${DBUSER}
-      - POSTGRES_PASSWORD=${PASSWORD}
-    env_file: ./.env
+    # environment: 
+    #   - POSTGRES_DB=disasterdb
+    #   - POSTGRES_USER=${DBUSER}
+    #   - POSTGRES_PASSWORD=${PASSWORD}
+    env_file:
+      - ./.env
     volumes:
       - postgers-db-volume:/var/lib/postgresql/data
     ports:

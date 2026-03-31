@@ -31,6 +31,7 @@ func (s *Server) CreateReport(c *gin.Context) {
 		return
 	}
 	userId, exists := c.Get("userId")
+	log.Printf("UserID :%v\n", userId)
 	if !exists {
 		log.Fatalf("%v user id does not exist", userId)
 	}

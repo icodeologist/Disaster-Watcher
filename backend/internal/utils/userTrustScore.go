@@ -1,40 +1,30 @@
 package utils
 
 import (
+	"context"
 	"time"
+
+	"log"
 
 	"github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
-	"log"
 )
 
 func UserTrustScore(user models.User) int {
 	return -1
 }
 
-// report trust score
-func VerifyReportPostedByUser(report *models.Report, user models.User, reportChannel chan models.Report) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("RECOVERED IN VERIFICATION WORKERS : %v\n", r)
-		}
-	}()
-	if !user.LocationCached || !report.ISLocationCached {
-		report.Status = "Unverified"
-		err := db.DB.Save(&report).Error
-		if err != nil {
-			log.Printf("Error Saving Report : %v\n", err)
-		}
-		return
-	}
-	score := 0
+//TODO: Refactor this shit code
+
+func Helper(ctx context.Context, user models.User, report *models.Report) (string, int, error) {
+	// FIX: Always start with 0
+	score := 10 // For testing purpose
 	radius := Haversine(*user.CachedLat, *user.CachedLong, *report.CachedLat, *report.CachedLong)
 	if radius <= 20 {
 		score += 3
-	} else {
-		score -= 2
-	}
+	} // TODO : FIX THIS scoring system. Its too harsh on new user
 	//check user reputation
+
 	switch {
 	case user.TotalReportPosted >= 10:
 		score += 3
@@ -53,7 +43,7 @@ func VerifyReportPostedByUser(report *models.Report, user models.User, reportCha
 		report.CreatedAt,
 	).Find(&similarReportPosted).Error
 	if err != nil {
-		log.Printf("Error Fetching similar Report : %v\n", err)
+		return "", 0, err
 	}
 	switch {
 	case len(similarReportPosted) >= 5:
@@ -64,24 +54,49 @@ func VerifyReportPostedByUser(report *models.Report, user models.User, reportCha
 		score -= 1
 	}
 
-	if score >= 3 {
+	if score >= 2 {
 		report.Status = "Verified"
 	} else {
 		report.Status = "Unverified"
 	}
-	err = db.DB.Save(&report).Error
+	err = db.DB.Save(report).Error
 	if err != nil {
-		log.Printf("Error Saving Report : %v\n", err)
+		return "", 0, err
 	}
-	switch {
-	case report.Status == "Verified":
+	return report.Status, score, nil
+}
+
+// report trust score
+func VerifyReportPostedByUser(ctx context.Context, report *models.Report, user models.User, reportChannel chan models.Report) {
+	log.Println("Started verify report")
+	if !user.LocationCached || !report.ISLocationCached {
+		log.Printf("[VERIFY] report %v or user %v has no cached location, marking unverified\n", report.ID, user.ID)
+		report.Status = "Unverified"
+		err := db.DB.Save(report).Error
+		if err != nil {
+			log.Printf("Error Saving Report : %v\n", err)
+		}
+		return
+	}
+	reportStatus, score, err := Helper(ctx, user, report)
+	if err != nil {
+		log.Printf("Error in score algorithm : %v\n", err)
+	}
+	if reportStatus == "Verified" {
 		log.Printf("[VERIFICATION RESULT] [ID : %v] [STATUS : %v] [SCORE : %v]", report.ID, report.Status, score)
-		reportChannel <- *report
-	default:
+		// if shutdown fired and waiting to send drop the report
+		select {
+		case reportChannel <- *report:
+			log.Println("Pushed to report channel")
+		case <-ctx.Done():
+			log.Printf("Verification worker cancelled, exiting\n")
+			return
+		}
+	} else {
 		err := db.DB.Delete(&report).Error
 		if err != nil {
 			log.Printf("Error While deleting report : %v\n", err)
 		}
+		log.Println("Else case ran so no reports were verified")
 	}
-
 }
