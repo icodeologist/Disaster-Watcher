@@ -68,34 +68,32 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 			userLat := user.CachedLat
 			userLong := user.CachedLong
 			if !user.LocationCached || !report.ISLocationCached {
+				log.Println("User are Report location is not Cached")
 				continue
 			}
 			radius := Haversine(*report.CachedLat, *report.CachedLong, *userLat, *userLong)
-			if radius <= 20 {
+			// FIX: fix this
+			if radius > 20 {
 				// incase if the affectedUserIdsChan is full and incase of blocking
 				// only if the shutdonw signal is fired instead of waiting just check if fired and return
 				// Because if downstream workers are already left this will keep hanging
 				select {
 				case affectedUserIdsChan <- user.ID:
+					log.Println("Pushed to the affected channel")
 					// if this case blocked we just drop the work
 				case <-ctx.Done():
 					log.Println("Shutdown fired. exiting")
 					return
 				}
+			} else {
+				log.Printf("No Users found near the radius of %v\n", radius)
 			}
 		}
 	}
 	for {
 		select {
 		case <-ctx.Done():
-			if len(reportChan) == 0 {
-				log.Printf("GetAffected user worker cancelled, exiting\n")
-				return
-			} else if len(reportChan) > 0 {
-				log.Printf("EXTRACTION WORKER [DRAINING] REMAINING JOBS \n")
-				report := <-reportChan
-				processReport(report)
-			}
+			return
 		case report := <-reportChan:
 			log.Println("Started processing report")
 			processReport(report)

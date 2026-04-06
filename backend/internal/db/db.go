@@ -33,7 +33,7 @@ func Connect() error {
 		fmt.Println("Successfully connected to database")
 	}
 
-	DB.AutoMigrate(&models.Report{}, &models.User{})
+	DB.AutoMigrate(&models.Report{}, &models.User{}, &models.Jobs{})
 	return nil
 
 }

@@ -3,7 +3,9 @@ package handler
 
 import (
 	// "context"
+	"encoding/json"
 	"net/http"
+
 	// "time"
 
 	// "strconv"
@@ -47,6 +49,7 @@ func (s *Server) CreateReport(c *gin.Context) {
 		})
 		return
 	}
+	println("Done create")
 	if err := database.DB.Preload("User").First(&userReport, userReport.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Success: false,
@@ -57,8 +60,10 @@ func (s *Server) CreateReport(c *gin.Context) {
 		})
 		return
 	}
+	println("done fetch")
 
 	if err := utils.ConvertReportLocationTOLatAndLong(&userReport); err != nil {
+		println("err : ", err)
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
@@ -70,11 +75,48 @@ func (s *Server) CreateReport(c *gin.Context) {
 		})
 		return
 	}
-	verificationMsg := VerificationMessage{
-		Report: userReport,
-		User:   userReport.User,
+	println("done convert")
+	// data that we will send to other worker stream
+	payloadData := models.PayloadData{
+		ReportID: userReport.ID,
+		UserID:   userReport.UserId,
+	}
+	// payloadData struct to byte
+	payLoadBytes, err := json.Marshal(payloadData)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Success: false,
+			Error: models.Error{
+				ErrorCode:    "JSON_MARSHAL_ERR",
+				Message:      "Converting payload data struct to bytes failed",
+				ErrorDetails: err.Error(),
+			},
+		})
+		return
+	}
+	println("Done paylaod marshal")
+	job := models.Jobs{
+		Status:  "pending",
+		Payload: payLoadBytes,
 	}
 
+	// making each job persist
+	if err := database.DB.Create(&job).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Success: false,
+			Error: models.Error{
+				ErrorCode:    "DATABASE_ERR",
+				ErrorDetails: err.Error(),
+			},
+		})
+		return
+	}
+	println("done create job")
+	// push to channel in select block under normal flow
+	verificationMsg := VerificationMessage{
+		JobID: job.Id,
+	}
+	println("Now select block")
 	select {
 	case s.VerificationChannel <- verificationMsg:
 		c.JSON(http.StatusAccepted, models.SuccessResponse{

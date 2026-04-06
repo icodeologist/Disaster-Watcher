@@ -96,18 +96,7 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 			for {
 				select {
 				case <-rootContext.Done():
-					if len(affUsersIdChannel) == 0 {
-						log.Printf("NOTIFICATION worker %d cancelled, exiting", id)
-						return
-					} else if len(affUsersIdChannel) > 0 {
-						userID, ok := <-affUsersIdChannel
-						if !ok {
-							return
-						}
-						log.Printf("PUSHING TO AFFECTED CHANNEL [DRAINING] finishing up remaining task\n")
-						processSendingEmail(userID)
-
-					}
+					return
 				case userID, ok := <-affUsersIdChannel:
 					if !ok {
 						return
@@ -170,16 +159,7 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 			for {
 				select {
 				case <-rootContext.Done():
-					if len(failedEmailsChan) == 0 {
-						log.Printf("FailedMessage Retry worker %d cancelled, exiting", id)
-						return
-					} else if len(failedEmailsChan) > 0 {
-						failedUserIdmsg, ok := <-failedEmailsChan
-						if !ok {
-							return
-						}
-						processFailedEmailSending(failedUserIdmsg)
-					}
+					return
 				case failedUserID, ok := <-failedEmailsChan:
 					if !ok {
 						return

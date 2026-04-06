@@ -13,35 +13,42 @@ import (
 func GetLATLONGfromUserLocation(location string) (*models.Location, error) {
 	if location == "" {
 		err := fmt.Errorf("Cannot geocode the empty location.")
+		println("location = empty")
 		return nil, err
 	}
 	parsedLocation := url.QueryEscape(location)
 	latLongFinderUrl := fmt.Sprintf("https://nominatim.openstreetmap.org/search?q=%v&format=json", parsedLocation)
 	req, err := http.NewRequest("GET", latLongFinderUrl, nil)
 	if err != nil {
+		println("http.Newreqeust error")
 		return nil, fmt.Errorf("Failed to send the request %v", req)
 	}
 	req.Header.Set("User-Agent", "DisasterNotifierapp/v1")
 	client := &http.Client{}
 	res, err := client.Do(req)
 	if err != nil {
+		fmt.Printf("httpDO error : %v\n", err)
 		return nil, fmt.Errorf("Exited while sending the request with the error %v", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
+		println("Status code != statusok")
 		return nil, fmt.Errorf("Failed witht the code %v", res.StatusCode)
 	}
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
+		println("Status code != statusok")
 		return nil, fmt.Errorf("Failed to read the response body.")
 	}
 
 	var geocodingresults []models.GeocodingResult
 	err = json.Unmarshal(body, &geocodingresults)
 	if err != nil {
+		fmt.Println("unmarshal error")
 		return nil, fmt.Errorf("Failed to parse the incoming request: %v", err)
 	}
 	if len(geocodingresults) == 0 {
+		fmt.Println("len == 0")
 		return nil, fmt.Errorf("No matching results.")
 	}
 	var lat, long float64
@@ -49,6 +56,7 @@ func GetLATLONGfromUserLocation(location string) (*models.Location, error) {
 	fmt.Sscanf(geocodingresults[0].Latitude, "%f", &lat)
 	fmt.Sscanf(geocodingresults[0].Longitude, "%f", &long)
 
+	fmt.Println("works")
 	return &models.Location{
 		Lat:  lat,
 		Long: long,

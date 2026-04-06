@@ -1,6 +1,6 @@
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InJ5YW5AZXhhbXBsZS5jb20iLCJleHAiOjE3NzUwMTE3MjIsImlkIjo2LCJ1c2VybmFtZSI6InJ5YW5fc2NvdHQifQ.eDbGB0uXLMbW2EtzvNmuaZEx1YnKeNb1vXd-D4rNmOM"
 API_URL=http://localhost:3000/api/reports
-BODY='{"category":"flood","description":"test","location":"Pflugerville, Texas, USA","priority":"high","status":"unverified"}'
+TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InJ5YW5AZXhhbXBsZS5jb20iLCJleHAiOjE3NzU1MzQxNDgsImlkIjo2LCJ1c2VybmFtZSI6InJ5YW5fc2NvdHQifQ.Rvk4IwlFz9cclUJuMRDQr-x_gUtDcpEkbBG--woleZ0"
+BODY='{"category":"flood","description":"test","location":"Texas, USA","priority":"high","status":"unverified"}'
 
 
 LOGIN_URL=http://localhost:3000/user/login

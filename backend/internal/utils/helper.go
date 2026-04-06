@@ -34,7 +34,7 @@ func CachedUserCords(user *models.User) error {
 
 // cahchedCords for our report model
 func ConvertReportLocationTOLatAndLong(report *models.Report) error {
-	if report.ISLocationCached && report.CachedLat != nil && report.CachedLong != nil {
+	if report.ISLocationCached || (report.CachedLat != nil && report.CachedLong != nil) {
 		return nil
 	}
 
@@ -42,6 +42,7 @@ func ConvertReportLocationTOLatAndLong(report *models.Report) error {
 	if err != nil {
 		return fmt.Errorf("ERROR : %v", err)
 	}
+	fmt.Println("Comes out of error")
 	report.CachedLat = &location.Lat
 	report.CachedLong = &location.Long
 	report.ISLocationCached = true
