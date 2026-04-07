@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/icodeologist/disasterwatch/internal/api/auth"
 	"github.com/icodeologist/disasterwatch/internal/api/handler"
+	"github.com/icodeologist/disasterwatch/internal/utils"
 	"github.com/icodeologist/disasterwatch/internal/worker"
 
 	"github.com/icodeologist/disasterwatch/internal/db"
@@ -34,11 +35,11 @@ func main() {
 	signal.Notify(signChannel, syscall.SIGINT, syscall.SIGTERM)
 
 	// Creating buffered channels for my worker pool
-	reportsChannel := make(chan models.Report, 10)
-	failedEmailsChan := make(chan worker.FailedEmailMessage, 10)
-	deadLetterChannel := make(chan worker.FailedEmailMessage, 10)
-	affectedUsersIDChannel := make(chan uint, 10)
-	verficationMessageChannel := make(chan handler.VerificationMessage, 10)
+	reportsChannel := make(chan models.ReportMessage, 10)
+	failedEmailsChan := make(chan models.FailedEmailMessage, 10)
+	deadLetterChannel := make(chan models.FailedEmailMessage, 10)
+	affectedUsersIDChannel := make(chan models.AffectedUsersMessage, 10)
+	verficationMessageChannel := make(chan models.VerificationMessage, 10)
 	//retry for failed message
 	maxRetries := 5
 
@@ -46,6 +47,9 @@ func main() {
 	if err := db.Connect(); err != nil {
 		log.Fatal(err)
 	}
+	log.Println("Getting all jobs that are still processing")
+	utils.RecoverPendingJobsFromDBOnStarting(verficationMessageChannel)
+	// utils.GetAllDONEJOBS()
 
 	// Putting all dependencies required for workers in workerServer
 	workerServer := &handler.Server{

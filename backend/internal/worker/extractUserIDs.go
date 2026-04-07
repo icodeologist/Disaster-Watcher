@@ -15,7 +15,7 @@ import (
 )
 
 // Get the users effected from the disasters and push their id to affuserchannel
-func StartExtractWorkers(rootContext context.Context, wg *sync.WaitGroup, n int, reportChannel <-chan models.Report, affUserIDChannel chan<- uint) {
+func StartExtractWorkers(rootContext context.Context, wg *sync.WaitGroup, n int, reportChannel <-chan models.ReportMessage, affUserIDChannel chan<- models.AffectedUsersMessage) {
 	// start n of workers
 	log.Println("Extracting User IDs: ", n, " WORKERS STARTED")
 
@@ -34,16 +34,8 @@ func StartExtractWorkers(rootContext context.Context, wg *sync.WaitGroup, n int,
 type EmailrateLimiter struct {
 	limiter *rate.Limiter
 }
-type FailedEmailMessage struct {
-	UserId     uint
-	User       models.User
-	Status     string
-	Message    string
-	RetryTime  int
-	RetryDelay time.Duration
-}
 
-func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n int, affUsersIdChannel <-chan uint, failedEmailsChan chan<- FailedEmailMessage) {
+func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n int, affUsersIdChannel <-chan models.AffectedUsersMessage, failedEmailsChan chan<- models.FailedEmailMessage) {
 	emailRateL := &EmailrateLimiter{
 		limiter: rate.NewLimiter(2, 5),
 	}
@@ -59,9 +51,9 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 				}
 			}()
 
-			processSendingEmail := func(userID uint) {
+			processSendingEmail := func(affUserMsg models.AffectedUsersMessage) {
 				var user models.User
-				if err := db.DB.Where("id=?", userID).First(&user).Error; err != nil {
+				if err := db.DB.Where("id=?", affUserMsg.UserID).First(&user).Error; err != nil {
 					log.Printf("DATABASE_ERR : %v\n", err)
 					// FIX: better way to deal with db error ?
 				}
@@ -69,12 +61,13 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 					log.Println("Error : ", err)
 					return
 				}
-				log.Printf("[SENDING TO ID %v] [1st TIME]", userID)
+				log.Printf("[SENDING TO ID %v] [1st TIME]", affUserMsg.UserID)
 				err := emailservice.SendEmail(user.Email)
 				if err != nil {
-					log.Printf("[FAILED] [ID : %v] [PUSHING TO FAILED MESSAGE CHANNEL]\n", userID)
-					failedMessage := &FailedEmailMessage{
-						UserId:    userID,
+					log.Printf("[FAILED] [ID : %v] [PUSHING TO FAILED MESSAGE CHANNEL]\n", affUserMsg.UserID)
+					failedMessage := &models.FailedEmailMessage{
+						JobID:     affUserMsg.JobID,
+						UserId:    affUserMsg.UserID,
 						User:      user,
 						Status:    "not sent",
 						Message:   "Message",
@@ -89,7 +82,17 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 						return
 					}
 				} else {
-					log.Printf("[SUCCESS] [ID : %v] [NOTIFICATION SENT]\n", userID)
+					var job models.Jobs
+					if err := db.DB.Where("id=?", affUserMsg.JobID).First(&job).Error; err != nil {
+						log.Printf("Error after passing [SUCCESS NOTIFICATION SENDING] %v\n", err)
+					} else {
+						job.Status = "done"
+						if err := db.DB.Save(&job).Error; err != nil {
+							log.Printf("ERROR [SAVING SUCCEED JOB TO DB] : %v\n", err)
+						} else {
+							log.Println("SUCCEED SAVING THE JOB TO DB WITH [SUCCEEDED status]")
+						}
+					}
 				}
 
 			}
@@ -97,18 +100,18 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 				select {
 				case <-rootContext.Done():
 					return
-				case userID, ok := <-affUsersIdChannel:
+				case affectedUserMsg, ok := <-affUsersIdChannel:
 					if !ok {
 						return
 					}
-					processSendingEmail(userID)
+					processSendingEmail(affectedUserMsg)
 				}
 			}
 		}(i)
 	}
 }
 
-func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGroup, n int, maxTries int, failedEmailsChan chan FailedEmailMessage, deadMessageChannel chan FailedEmailMessage) {
+func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGroup, n int, maxTries int, failedEmailsChan chan models.FailedEmailMessage, deadMessageChannel chan models.FailedEmailMessage) {
 	log.Println("STARTED RETRYING FAILED MESSAGES WORKERS")
 	for i := 0; i < n; i++ {
 		wg.Add(1)
@@ -120,9 +123,10 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 					log.Printf("RECOVERED IN FAILED NOTIFICATION WORKER : %v", r)
 				}
 			}()
-			processFailedEmailSending := func(failedUserID FailedEmailMessage) {
+			processFailedEmailSending := func(failedUserID models.FailedEmailMessage) {
 				timeTOwait := math.Pow(2, float64(failedUserID.RetryTime))
-				fMsg := &FailedEmailMessage{
+				fMsg := &models.FailedEmailMessage{
+					JobID:      failedUserID.JobID,
 					User:       failedUserID.User,
 					UserId:     failedUserID.UserId,
 					Status:     "Email provider error",
@@ -146,9 +150,33 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 						}
 					} else {
 						log.Printf("[SUCCESS] [ID : %v] [FAILED COUNT : %v]\n", fMsg.UserId, fMsg.RetryTime)
+						var job models.Jobs
+						if err := db.DB.Where("id=?", failedUserID.JobID).First(&job).Error; err != nil {
+							log.Printf("Error after passing [SUCCESS DB FAILED TO FECTH JOB] %v\n", err)
+						} else {
+							job.Status = "passed"
+							if err := db.DB.Save(&job).Error; err != nil {
+								log.Printf("ERROR [SAVING SUCCEED JOB TO DB] : %v\n", err)
+							} else {
+								log.Println("SUCCEED SAVING THE JOB TO DB WITH [SUCCEEDED status]")
+							}
+						}
 					}
 				} else {
 					log.Printf("[FAILED - MAX TRIES REACHED] [ID : %v] [PUSHED TO DEAD CHANNEL]", fMsg.UserId)
+					var job models.Jobs
+					log.Println("JOB ID failedUserID.JOBID : ", failedUserID.JobID)
+					log.Println("JOB ID fmsg.JOBID : ", fMsg.JobID)
+					if err := db.DB.Where("id=?", failedUserID.JobID).First(&job).Error; err != nil {
+						log.Printf("Error after passing [SUCCESS NOTIFICATION SENDING] %v\n", err)
+					} else {
+						job.Status = "failed"
+						if err := db.DB.Save(&job).Error; err != nil {
+							log.Printf("ERROR [SAVING SUCCEED JOB TO DB] : %v\n", err)
+						} else {
+							log.Println("JOB FAILED | SAVING THE JOB TO DB WITH [FAILED status]")
+						}
+					}
 					select {
 					case deadMessageChannel <- *fMsg:
 					case <-rootContext.Done():

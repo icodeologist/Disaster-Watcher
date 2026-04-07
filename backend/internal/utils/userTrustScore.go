@@ -67,7 +67,7 @@ func Helper(ctx context.Context, user models.User, report *models.Report) (strin
 }
 
 // report trust score
-func VerifyReportPostedByUser(ctx context.Context, report *models.Report, user models.User, reportChannel chan models.Report) {
+func VerifyReportPostedByUser(ctx context.Context, report *models.Report, user models.User, reportChannel chan models.ReportMessage, jobId int64) {
 	log.Println("Started verify report")
 	if !user.LocationCached || !report.ISLocationCached {
 		log.Printf("[VERIFY] report %v or user %v has no cached location, marking unverified\n", report.ID, user.ID)
@@ -85,8 +85,13 @@ func VerifyReportPostedByUser(ctx context.Context, report *models.Report, user m
 	if reportStatus == "Verified" {
 		log.Printf("[VERIFICATION RESULT] [ID : %v] [STATUS : %v] [SCORE : %v]", report.ID, report.Status, score)
 		// if shutdown fired and waiting to send drop the report
+		reportMsg := models.ReportMessage{
+			JobID:  jobId,
+			Report: *report,
+		}
+
 		select {
-		case reportChannel <- *report:
+		case reportChannel <- reportMsg:
 			log.Println("Pushed to report channel")
 		case <-ctx.Done():
 			log.Printf("Verification worker cancelled, exiting\n")

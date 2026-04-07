@@ -6,7 +6,6 @@ import (
 	"log"
 	"sync"
 
-	"github.com/icodeologist/disasterwatch/internal/api/handler"
 	"github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
 	"github.com/icodeologist/disasterwatch/internal/utils"
@@ -41,7 +40,7 @@ func fetchUserById(userId uint) (models.User, error) {
 }
 
 // Start of notification pipeline
-func StartVerificationWorkers(rootCtx context.Context, wg *sync.WaitGroup, n int, verificationMsgChannel chan handler.VerificationMessage, reportChan chan models.Report) {
+func StartVerificationWorkers(rootCtx context.Context, wg *sync.WaitGroup, n int, verificationMsgChannel chan models.VerificationMessage, reportChan chan models.ReportMessage) {
 	log.Println("STARTED [VERIFICATION PROCESS WORKERS]")
 	for i := 0; i < n; i++ {
 		wg.Add(1)
@@ -54,7 +53,7 @@ func StartVerificationWorkers(rootCtx context.Context, wg *sync.WaitGroup, n int
 					return
 				}
 			}()
-			processCurrentJob := func(verifyMsg handler.VerificationMessage) {
+			processCurrentJob := func(verifyMsg models.VerificationMessage) {
 				currentJob, err := fetchJobById(verifyMsg.JobID)
 				if err != nil {
 					// not stopping here just keep the pending status and increment attempts
@@ -90,7 +89,7 @@ func StartVerificationWorkers(rootCtx context.Context, wg *sync.WaitGroup, n int
 					return
 				}
 				println("Done user fetch")
-				utils.VerifyReportPostedByUser(rootCtx, &report, user, reportChan)
+				utils.VerifyReportPostedByUser(rootCtx, &report, user, reportChan, verifyMsg.JobID)
 				log.Println("process current started")
 				log.Println("Started the Verification process")
 			}

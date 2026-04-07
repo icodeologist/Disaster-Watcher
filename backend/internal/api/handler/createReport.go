@@ -5,6 +5,7 @@ import (
 	// "context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	// "time"
 
@@ -96,9 +97,11 @@ func (s *Server) CreateReport(c *gin.Context) {
 	}
 	println("Done paylaod marshal")
 	job := models.Jobs{
-		Status:  "pending",
-		Payload: payLoadBytes,
+		Status:     "pending",
+		Payload:    payLoadBytes,
+		Created_at: time.Now(),
 	}
+	log.Println("JOB [CREATED] at : ", job.Created_at)
 
 	// making each job persist
 	if err := database.DB.Create(&job).Error; err != nil {
@@ -113,12 +116,18 @@ func (s *Server) CreateReport(c *gin.Context) {
 	}
 	println("done create job")
 	// push to channel in select block under normal flow
-	verificationMsg := VerificationMessage{
+	verificationMsg := models.VerificationMessage{
 		JobID: job.Id,
 	}
 	println("Now select block")
 	select {
 	case s.VerificationChannel <- verificationMsg:
+		job.Started_at = time.Now()
+		err := database.DB.Save(&job).Error
+		if err != nil {
+			log.Println("ERR : ", err)
+		}
+		log.Println("JOB [STARTED] at : ", job.Started_at)
 		c.JSON(http.StatusAccepted, models.SuccessResponse{
 			Success: true,
 			Data:    userReport,

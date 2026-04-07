@@ -46,7 +46,7 @@ func NearByTrustedUsers(nearbyUserIDS []uint) ([]uint, error) {
 }
 
 // Users in the distance from the report posted in  radius like 20km?
-func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUsers []models.User, reportChan <-chan models.Report, affectedUserIdsChan chan<- uint) {
+func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUsers []models.User, reportChan <-chan models.ReportMessage, affectedUserIdsChan chan<- models.AffectedUsersMessage) {
 	log.Printf("[ALL USER] count %d users \n", len(allUsers))
 	defer wg.Done()
 	defer func() {
@@ -63,8 +63,9 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 	// wg.DONE() fires
 	// wg.WAIT() in main unblocks and we shutdown
 	//
-	processReport := func(report models.Report) {
+	processReport := func(reportMsg models.ReportMessage) {
 		for _, user := range allUsers {
+			report := reportMsg.Report
 			userLat := user.CachedLat
 			userLong := user.CachedLong
 			if !user.LocationCached || !report.ISLocationCached {
@@ -77,8 +78,12 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 				// incase if the affectedUserIdsChan is full and incase of blocking
 				// only if the shutdonw signal is fired instead of waiting just check if fired and return
 				// Because if downstream workers are already left this will keep hanging
+				affectedUsersMsg := models.AffectedUsersMessage{
+					JobID:  reportMsg.JobID,
+					UserID: user.ID,
+				}
 				select {
-				case affectedUserIdsChan <- user.ID:
+				case affectedUserIdsChan <- affectedUsersMsg:
 					log.Println("Pushed to the affected channel")
 					// if this case blocked we just drop the work
 				case <-ctx.Done():
@@ -94,9 +99,9 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 		select {
 		case <-ctx.Done():
 			return
-		case report := <-reportChan:
+		case reportMsg := <-reportChan:
 			log.Println("Started processing report")
-			processReport(report)
+			processReport(reportMsg)
 		}
 	}
 }
