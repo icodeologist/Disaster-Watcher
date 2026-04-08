@@ -3,29 +3,30 @@ package db
 import (
 	"fmt"
 	"github.com/icodeologist/disasterwatch/internal/models"
-	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"os"
 )
 
 var DB *gorm.DB
 
 func Connect() error {
-	envFile, err := godotenv.Read(".env")
-	if err != nil {
-		return err
-	}
-	host := envFile["HOST"]
-	dbPort := envFile["DBPORT"]
-	user := envFile["DBUSER"]
-	password := envFile["PASSWORD"]
-	dbName := envFile["NAME"]
+	// os.Getenv, err := godotenv.Read(".env")
+	// if err != nil {
+	// 	return err
+	// }
+	host := os.Getenv("HOST")
+	dbPort := os.Getenv("DBPORT")
+	user := os.Getenv("DBUSER")
+	password := os.Getenv("PASSWORD")
+	dbName := os.Getenv("NAME")
 
 	//connecting to database
 	dbUri := fmt.Sprintf("host=%s user=%s dbname=%s sslmode=disable password=%v port=%v", host, user, dbName, password, dbPort)
 
 	//open the connection to database
+	var err error
 	DB, err = gorm.Open(postgres.Open(dbUri), &gorm.Config{})
 	if err != nil {
 		return err
@@ -33,7 +34,7 @@ func Connect() error {
 		fmt.Println("Successfully connected to database")
 	}
 
-	DB.AutoMigrate(&models.Report{}, &models.User{}, &models.Jobs{})
+	DB.AutoMigrate(&models.Report{}, &models.User{}, &models.Jobs{}, &models.DLQJob{})
 	return nil
 
 }
