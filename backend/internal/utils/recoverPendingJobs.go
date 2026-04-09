@@ -2,6 +2,8 @@ package utils
 
 import (
 	"log"
+	"log/slog"
+	"time"
 
 	"github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
@@ -10,19 +12,23 @@ import (
 func RecoverPendingJobsFromDBOnStarting(verifcationChannel chan<- models.VerificationMessage) {
 	var pendingJobs []models.Jobs
 	if err := db.DB.Where("status=?", "pending").Find(&pendingJobs).Error; err != nil {
-		log.Println("Err : ", err)
+		slog.Error("Db update error in RecoverPendingJobsFromDBOnStarting", "error", err)
 	}
 	if len(pendingJobs) > 0 {
-		log.Printf("[PENDING JOBS : %d]\n", len(pendingJobs))
 		for _, job := range pendingJobs {
 			vmsg := models.VerificationMessage{
 				JobID: job.Id,
 			}
+			job.Status = "processing"
+			err := db.DB.Save(&job).Error
+			if err != nil {
+				slog.Error("Db save error in RecoverPendingJobsFromDBOnStarting", "error", err)
+			}
 			verifcationChannel <- vmsg
-			log.Printf("[JOB ID : %d] [RECOVERED AND PROCESSING]\n", job.Id)
+			slog.Info("Job restarted", "started_time", time.Now())
 		}
 	} else {
-		log.Println("[NO PENDING JOBS]")
+		slog.Info("No pending jobs in DB")
 	}
 }
 
@@ -41,21 +47,6 @@ func GetAllDONEJOBS() {
 	}
 }
 
-func GetAllInfoFromDeadletterQueue() {
-	var job []models.DLQJob
-	if err := db.DB.Find(&job).Error; err != nil {
-		log.Printf("ERROR : %v\n", err)
-		panic(err)
-	}
-	if len(job) == 0 {
-		log.Println("NO JOBS FAILED")
-	} else {
-		log.Println("THE LENGTH OF JOBS WITH PENDING STATUS : ", len(job))
-		for _, j := range job {
-			log.Println("Job DONE : ", j)
-		}
-	}
-}
 func GetAllInfoFromDone() {
 	var job []models.Jobs
 	if err := db.DB.Find(&job).Error; err != nil {

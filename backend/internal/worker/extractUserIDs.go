@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"log"
 	"log/slog"
 	"math"
 	"sync"
@@ -55,7 +54,7 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 			processSendingEmail := func(affUserMsg models.AffectedUsersMessage) {
 				var user models.User
 				if err := db.DB.Where("id=?", affUserMsg.UserID).First(&user).Error; err != nil {
-					log.Printf("DATABASE_ERR : %v\n", err)
+					slog.Error("failed to fetch user from db", "user_id", affUserMsg.UserID, "error", err)
 					return
 					// FIX: better way to deal with db error ?
 				}
@@ -68,12 +67,10 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 				if err != nil {
 					slog.Warn("Failed to send Email", "User", affUserMsg.UserID)
 					failedMessage := &models.FailedEmailMessage{
-						JobID:     affUserMsg.JobID,
-						UserId:    affUserMsg.UserID,
-						User:      user,
-						Status:    "not sent",
-						Message:   "Message",
-						RetryTime: 1,
+						JobID:        affUserMsg.JobID,
+						User:         user,
+						ErrorMessage: err,
+						RetryAttempt: 1,
 					}
 					// same logic
 					// if shutdown fired and worker wait to send
@@ -105,7 +102,7 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 					return
 				case affectedUserMsg, ok := <-affUsersIdChannel:
 					if !ok {
-						slog.Error("No jobs found for affUsersIdChannel")
+						slog.Info("affected users channel closed, worker exiting")
 						return
 					}
 					processSendingEmail(affectedUserMsg)
@@ -128,64 +125,64 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 				}
 			}()
 			processFailedEmailSending := func(failedUserID models.FailedEmailMessage) {
-				timeTOwait := math.Pow(2, float64(failedUserID.RetryTime))
+				timeTOwait := math.Pow(2, float64(failedUserID.RetryAttempt))
 				fMsg := &models.FailedEmailMessage{
-					JobID:      failedUserID.JobID,
-					User:       failedUserID.User,
-					UserId:     failedUserID.UserId,
-					Status:     "Email provider error",
-					Message:    "message",
-					RetryTime:  failedUserID.RetryTime + 1,
-					RetryDelay: time.Duration(timeTOwait),
+					JobID:        failedUserID.JobID,
+					User:         failedUserID.User,
+					ErrorMessage: failedUserID.ErrorMessage,
+					RetryAttempt: failedUserID.RetryAttempt + 1,
+					RetryDelay:   time.Duration(timeTOwait) * time.Second,
 				}
-				if fMsg.RetryTime <= maxTries {
+				if fMsg.RetryAttempt <= maxTries {
 					select {
 					case <-time.After(time.Duration(timeTOwait) * time.Second):
 					case <-rootContext.Done():
 						slog.Info("shutdown fired, stopping workers")
 						return
 					}
-					slog.Info("Retrying", "User", fMsg.UserId, "Retry time", fMsg.RetryTime, "Retrying again in", fMsg.RetryDelay.Minutes())
+					slog.Info("Retrying", "User", fMsg.User.ID, "Retry time", fMsg.RetryAttempt, "Retrying again in", fMsg.RetryDelay.Minutes())
 					err := emailservice.SendEmail(failedUserID.User.Email)
 					if err != nil {
+						slog.Warn("Notification Failed, Sending to DeadLetterChannel", "Tries Left", fMsg.RetryAttempt, "Max_tries", maxTries)
 						select {
 						case failedEmailsChan <- *fMsg:
 						case <-rootContext.Done():
 							return
 						}
 					} else {
-						slog.Info("Successusfully Send the email", "User", "fmsg.UserId", "Failed", fMsg.RetryTime)
+						slog.Info("email sent successfully", "user_id", fMsg.User.ID, "attempt", fMsg.RetryAttempt)
 						var job models.Jobs
 						if err := db.DB.Where("id=?", failedUserID.JobID).First(&job).Error; err != nil {
-							slog.Error("Failed to fetch the job from DB", "User", fMsg.UserId, "Error", err)
+							slog.Error("Failed to fetch the job from DB", "User", fMsg.User.ID, "Error", err)
 						} else {
 							job.Status = "done"
 							if err := db.DB.Save(&job).Error; err != nil {
-								slog.Error("Failed to update the job status to DB", "User", fMsg.UserId, "Error", err)
+								slog.Error("Failed to update the job status to DB", "User", fMsg.User.ID, "Error", err)
 							}
 						}
 					}
 				} else {
-					log.Printf("[FAILED - MAX TRIES REACHED] [ID : %v] [PUSHED TO DEAD CHANNEL]", fMsg.UserId)
-					slog.Info("Notification Failed, Sending to DeadLetterChannel", "Tries Left", maxTries-fMsg.RetryTime)
 					var job models.Jobs
 					if err := db.DB.Where("id=?", failedUserID.JobID).First(&job).Error; err != nil {
-						slog.Error("Failed to fetch the job from DB", "User", fMsg.UserId, "Error", err)
+						slog.Error("Failed to fetch the job from DB", "User", fMsg.User.ID, "Error", err)
 					} else {
 						job.Status = "failed"
 						if err := db.DB.Save(&job).Error; err != nil {
-							slog.Error("Failed to update the job status to DB", "User", fMsg.UserId, "Error", err)
+							slog.Error("Failed to update the job status to DB", "User", fMsg.User.ID, "Error", err)
 						}
 					}
 					fmsgInfo := models.FailedInfo{
-						AttemptedTime: fMsg.RetryTime,
+						Error: fMsg.ErrorMessage,
 					}
 
 					dlqJob := models.DLQJob{
-						Error:         "Failed its max attempts of retry",
-						FailedMsgInfo: fmsgInfo.AttemptedTime,
+						ErrorInfo:      fmsgInfo.Error.Error(),
+						FailedMsgJOBID: fMsg.JobID,
 					}
 					select {
+					// if faile after maxtries  == retry attempts
+					// push to DL
+					// and save the job
 					case deadMessageChannel <- dlqJob:
 					case <-rootContext.Done():
 						return

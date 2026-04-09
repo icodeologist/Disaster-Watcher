@@ -3,10 +3,10 @@ package models
 type DLQJob struct {
 	ID int64
 	// Why it failed
-	Error         string
-	FailedMsgInfo int
+	ErrorInfo      string
+	FailedMsgJOBID int64
 }
 
 type FailedInfo struct {
-	AttemptedTime int
+	Error error
 }

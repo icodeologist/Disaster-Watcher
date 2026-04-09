@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/icodeologist/disasterwatch/internal/api/auth"
 	"github.com/icodeologist/disasterwatch/internal/api/handler"
+	"github.com/icodeologist/disasterwatch/internal/utils"
 	"github.com/icodeologist/disasterwatch/internal/worker"
 	"github.com/joho/godotenv"
 
@@ -40,7 +41,8 @@ func main() {
 	// Creating buffered channels for my worker pool
 	reportsChannel := make(chan models.ReportMessage, 10)
 	failedEmailsChan := make(chan models.FailedEmailMessage, 10)
-	deadLetterChannel := make(chan models.DLQJob, 10)
+	// If some message failed after retry put them here and later let admin check through it
+	deadLetterChannel := make(chan models.DLQJob, 100)
 	affectedUsersIDChannel := make(chan models.AffectedUsersMessage, 10)
 	verficationMessageChannel := make(chan models.VerificationMessage, 1000)
 	//retry for failed message
@@ -57,7 +59,7 @@ func main() {
 		log.Fatal(err)
 	}
 	slog.Info("Getting all jobs that are still processing")
-	// utils.RecoverPendingJobsFromDBOnStarting(verficationMessageChannel)
+	utils.RecoverPendingJobsFromDBOnStarting(verficationMessageChannel)
 	// utils.GetAllDONEJOBS()
 	// utils.GetAllDONEJOBS()
 

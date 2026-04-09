@@ -4,15 +4,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"net/http"
-	"os"
-	"time"
-
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v4"
 	database "github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
 	"github.com/icodeologist/disasterwatch/internal/utils"
+	"net/http"
 )
 
 // User registration with password hashing and location caching
@@ -155,13 +151,7 @@ func UserLogin(c *gin.Context) {
 	// 		})
 	// 		return
 	// 	}
-	generateToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"id":       userFound.ID,
-		"username": userFound.UserName,
-		"email":    userFound.Email,
-		"exp":      time.Now().Add(time.Hour * 24).Unix(),
-	})
-	jwtToken, err := generateToken.SignedString([]byte(os.Getenv("SECRET")))
+	jwtToken, err := GenerateAndSignJwtToken(userFound)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Success: false,
