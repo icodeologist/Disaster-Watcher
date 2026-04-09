@@ -12,7 +12,7 @@ import (
 	// "strconv"
 	//
 	// "fmt"
-	"log"
+	"log/slog"
 
 	"github.com/gin-gonic/gin"
 	database "github.com/icodeologist/disasterwatch/internal/db"
@@ -34,9 +34,8 @@ func (s *Server) CreateReport(c *gin.Context) {
 		return
 	}
 	userId, exists := c.Get("userId")
-	log.Printf("UserID :%v\n", userId)
 	if !exists {
-		log.Fatalf("%v user id does not exist", userId)
+		slog.Error("user id does not exist", "user_id", userId)
 	}
 	userReport.UserId = userId.(uint)
 
@@ -50,7 +49,6 @@ func (s *Server) CreateReport(c *gin.Context) {
 		})
 		return
 	}
-	println("Done create")
 	if err := database.DB.Preload("User").First(&userReport, userReport.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Success: false,
@@ -61,7 +59,6 @@ func (s *Server) CreateReport(c *gin.Context) {
 		})
 		return
 	}
-	println("done fetch")
 
 	if err := utils.ConvertReportLocationTOLatAndLong(&userReport); err != nil {
 		println("err : ", err)
@@ -76,7 +73,6 @@ func (s *Server) CreateReport(c *gin.Context) {
 		})
 		return
 	}
-	println("done convert")
 	// data that we will send to other worker stream
 	payloadData := models.PayloadData{
 		ReportID: userReport.ID,
@@ -95,13 +91,12 @@ func (s *Server) CreateReport(c *gin.Context) {
 		})
 		return
 	}
-	println("Done paylaod marshal")
 	job := models.Jobs{
 		Status:     "pending",
 		Payload:    payLoadBytes,
 		Created_at: time.Now(),
 	}
-	log.Println("JOB [CREATED] at : ", job.Created_at)
+	slog.Info("Job created", "created_time", job.Created_at)
 
 	// making each job persist
 	if err := database.DB.Create(&job).Error; err != nil {
@@ -114,25 +109,26 @@ func (s *Server) CreateReport(c *gin.Context) {
 		})
 		return
 	}
-	println("done create job")
 	// push to channel in select block under normal flow
 	verificationMsg := models.VerificationMessage{
 		JobID: job.Id,
 	}
-	println("Now select block")
 	select {
 	case s.VerificationChannel <- verificationMsg:
 		job.Started_at = time.Now()
+		job.Status = "processing"
 		err := database.DB.Save(&job).Error
 		if err != nil {
-			log.Println("ERR : ", err)
+			slog.Error("Failed to save the job to DB in CreateReport endpoint", "error", err)
+			return
+		} else {
+			slog.Info("Job started", "started_time", job.Started_at)
+			c.JSON(http.StatusAccepted, models.SuccessResponse{
+				Success: true,
+				Data:    userReport,
+				Message: "Successfully created the report. Wait for the verfication process.",
+			})
 		}
-		log.Println("JOB [STARTED] at : ", job.Started_at)
-		c.JSON(http.StatusAccepted, models.SuccessResponse{
-			Success: true,
-			Data:    userReport,
-			Message: "Successfully created the report. Wait for the verfication process.",
-		})
 	default:
 		c.JSON(503, models.ErrorResponse{
 			Success: false,

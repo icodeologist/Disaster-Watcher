@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"log"
+	"log/slog"
 
 	"github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
@@ -68,22 +68,22 @@ func Helper(ctx context.Context, user models.User, report *models.Report) (strin
 
 // report trust score
 func VerifyReportPostedByUser(ctx context.Context, report *models.Report, user models.User, reportChannel chan models.ReportMessage, jobId int64) {
-	log.Println("Started verify report")
+	slog.Info("VERIFICATION PROCESS STARTED", "JOB", jobId)
 	if !user.LocationCached || !report.ISLocationCached {
-		log.Printf("[VERIFY] report %v or user %v has no cached location, marking unverified\n", report.ID, user.ID)
+		slog.Warn("User or Report location not found. Marking Report Unverified", "Is User Cached", user.LocationCached, "Is Report Cached", report.ISLocationCached, "user_id", user.ID, "report_id", report.ID)
 		report.Status = "Unverified"
 		err := db.DB.Save(report).Error
 		if err != nil {
-			log.Printf("Error Saving Report : %v\n", err)
+			slog.Error("Report save Failed", "report_id", report.ID, "Error", err)
 		}
 		return
 	}
 	reportStatus, score, err := Helper(ctx, user, report)
 	if err != nil {
-		log.Printf("Error in score algorithm : %v\n", err)
+		slog.Error("Report scoring algorithm returned ", "Error", err)
 	}
 	if reportStatus == "Verified" {
-		log.Printf("[VERIFICATION RESULT] [ID : %v] [STATUS : %v] [SCORE : %v]", report.ID, report.Status, score)
+		slog.Info("Verified", "report_id", report.ID, "report_score", score)
 		// if shutdown fired and waiting to send drop the report
 		reportMsg := models.ReportMessage{
 			JobID:  jobId,
@@ -92,16 +92,15 @@ func VerifyReportPostedByUser(ctx context.Context, report *models.Report, user m
 
 		select {
 		case reportChannel <- reportMsg:
-			log.Println("Pushed to report channel")
 		case <-ctx.Done():
-			log.Printf("Verification worker cancelled, exiting\n")
+			slog.Info("Shutdown Fired", "Idle worker exiting", "Nothing to do")
 			return
 		}
 	} else {
+		slog.Warn("Unverified", "report_id", report.ID)
 		err := db.DB.Delete(&report).Error
 		if err != nil {
-			log.Printf("Error While deleting report : %v\n", err)
+			slog.Error("Delete Unverified report Failed", "report_id", report.ID, "DB.Error", err)
 		}
-		log.Println("Else case ran so no reports were verified")
 	}
 }

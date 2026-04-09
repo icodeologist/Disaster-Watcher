@@ -6,6 +6,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"log/slog"
 	"os"
 )
 
@@ -31,7 +32,7 @@ func Connect() error {
 	if err != nil {
 		return err
 	} else {
-		fmt.Println("Successfully connected to database")
+		slog.Error("Successfully connected to databse")
 	}
 
 	DB.AutoMigrate(&models.Report{}, &models.User{}, &models.Jobs{}, &models.DLQJob{})

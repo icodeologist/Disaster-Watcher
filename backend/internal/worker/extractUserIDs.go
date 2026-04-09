@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"log"
+	"log/slog"
 	"math"
 	"sync"
 	"time"
@@ -17,14 +18,13 @@ import (
 // Get the users effected from the disasters and push their id to affuserchannel
 func StartExtractWorkers(rootContext context.Context, wg *sync.WaitGroup, n int, reportChannel <-chan models.ReportMessage, affUserIDChannel chan<- models.AffectedUsersMessage) {
 	// start n of workers
-	log.Println("Extracting User IDs: ", n, " WORKERS STARTED")
+	slog.Info("EXTRACTUSERS WORKERS STARTED", "COUNT", n)
 
 	var allUsers []models.User
 
 	if err := db.DB.Find(&allUsers).Error; err != nil {
-		log.Fatalf("Error Fetching all users from db : %v\n", err)
+		slog.Error("Failed to get all users", "Error", err)
 	}
-	log.Printf("[EXTRACT] loaded %d users\n", len(allUsers))
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go utils.GetUsersAffectedByDisaster(rootContext, wg, allUsers, reportChannel, affUserIDChannel)
@@ -36,6 +36,7 @@ type EmailrateLimiter struct {
 }
 
 func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n int, affUsersIdChannel <-chan models.AffectedUsersMessage, failedEmailsChan chan<- models.FailedEmailMessage) {
+	slog.Info("NOTIFICATION WORKERS STARTED", "COUNT", n)
 	emailRateL := &EmailrateLimiter{
 		limiter: rate.NewLimiter(2, 5),
 	}
@@ -47,7 +48,7 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 			//recover if this go routiner panicks at some point
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("RECOVERED IN NOTIFICATION WORKER : %v", r)
+					slog.Error("Recovered panic in Notification Workers", "panic", r)
 				}
 			}()
 
@@ -55,16 +56,17 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 				var user models.User
 				if err := db.DB.Where("id=?", affUserMsg.UserID).First(&user).Error; err != nil {
 					log.Printf("DATABASE_ERR : %v\n", err)
+					return
 					// FIX: better way to deal with db error ?
 				}
 				if err := emailRateL.limiter.Wait(rootContext); err != nil {
-					log.Println("Error : ", err)
+					slog.Warn("email rate limiter wait interrupted", "error", err)
 					return
 				}
-				log.Printf("[SENDING TO ID %v] [1st TIME]", affUserMsg.UserID)
+				slog.Info("Email Sending", "User", affUserMsg.UserID, "Tries", "First Time")
 				err := emailservice.SendEmail(user.Email)
 				if err != nil {
-					log.Printf("[FAILED] [ID : %v] [PUSHING TO FAILED MESSAGE CHANNEL]\n", affUserMsg.UserID)
+					slog.Warn("Failed to send Email", "User", affUserMsg.UserID)
 					failedMessage := &models.FailedEmailMessage{
 						JobID:     affUserMsg.JobID,
 						UserId:    affUserMsg.UserID,
@@ -78,19 +80,19 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 					// drop it assuming downline workers already left
 					select {
 					case failedEmailsChan <- *failedMessage:
+						slog.Info("Push failed email to FailedMessageChannel", "User", affUserMsg.UserID)
 					case <-rootContext.Done():
+						slog.Info("shutdown fired, stopping workers")
 						return
 					}
 				} else {
 					var job models.Jobs
 					if err := db.DB.Where("id=?", affUserMsg.JobID).First(&job).Error; err != nil {
-						log.Printf("Error after passing [SUCCESS NOTIFICATION SENDING] %v\n", err)
+						slog.Error("Failed to fetch the job from DB", "Occured in", "After sending email")
 					} else {
 						job.Status = "done"
 						if err := db.DB.Save(&job).Error; err != nil {
-							log.Printf("ERROR [SAVING SUCCEED JOB TO DB] : %v\n", err)
-						} else {
-							log.Println("SUCCEED SAVING THE JOB TO DB WITH [SUCCEEDED status]")
+							slog.Error("Failed to update job", "error", err)
 						}
 					}
 				}
@@ -99,9 +101,11 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 			for {
 				select {
 				case <-rootContext.Done():
+					slog.Info("shutdown fired, stopping workers")
 					return
 				case affectedUserMsg, ok := <-affUsersIdChannel:
 					if !ok {
+						slog.Error("No jobs found for affUsersIdChannel")
 						return
 					}
 					processSendingEmail(affectedUserMsg)
@@ -111,8 +115,8 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 	}
 }
 
-func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGroup, n int, maxTries int, failedEmailsChan chan models.FailedEmailMessage, deadMessageChannel chan models.FailedEmailMessage) {
-	log.Println("STARTED RETRYING FAILED MESSAGES WORKERS")
+func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGroup, n int, maxTries int, failedEmailsChan chan models.FailedEmailMessage, deadMessageChannel chan models.DLQJob) {
+	slog.Info("FAILED EMAIL WORKERS STARTED", "COUNT", n)
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func(id int) {
@@ -120,7 +124,7 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 			//recover if this go routiner panicks at some point
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("RECOVERED IN FAILED NOTIFICATION WORKER : %v", r)
+					slog.Error("Recoverd panic in StartFailedEmailSendingWorker", "Panic", r)
 				}
 			}()
 			processFailedEmailSending := func(failedUserID models.FailedEmailMessage) {
@@ -138,9 +142,10 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 					select {
 					case <-time.After(time.Duration(timeTOwait) * time.Second):
 					case <-rootContext.Done():
+						slog.Info("shutdown fired, stopping workers")
 						return
 					}
-					log.Printf("[RETRY TIME : %v] [ID : %v] [DELAY : %v]\n", fMsg.RetryTime, fMsg.UserId, fMsg.RetryDelay)
+					slog.Info("Retrying", "User", fMsg.UserId, "Retry time", fMsg.RetryTime, "Retrying again in", fMsg.RetryDelay.Minutes())
 					err := emailservice.SendEmail(failedUserID.User.Email)
 					if err != nil {
 						select {
@@ -149,36 +154,39 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 							return
 						}
 					} else {
-						log.Printf("[SUCCESS] [ID : %v] [FAILED COUNT : %v]\n", fMsg.UserId, fMsg.RetryTime)
+						slog.Info("Successusfully Send the email", "User", "fmsg.UserId", "Failed", fMsg.RetryTime)
 						var job models.Jobs
 						if err := db.DB.Where("id=?", failedUserID.JobID).First(&job).Error; err != nil {
-							log.Printf("Error after passing [SUCCESS DB FAILED TO FECTH JOB] %v\n", err)
+							slog.Error("Failed to fetch the job from DB", "User", fMsg.UserId, "Error", err)
 						} else {
-							job.Status = "passed"
+							job.Status = "done"
 							if err := db.DB.Save(&job).Error; err != nil {
-								log.Printf("ERROR [SAVING SUCCEED JOB TO DB] : %v\n", err)
-							} else {
-								log.Println("SUCCEED SAVING THE JOB TO DB WITH [SUCCEEDED status]")
+								slog.Error("Failed to update the job status to DB", "User", fMsg.UserId, "Error", err)
 							}
 						}
 					}
 				} else {
 					log.Printf("[FAILED - MAX TRIES REACHED] [ID : %v] [PUSHED TO DEAD CHANNEL]", fMsg.UserId)
+					slog.Info("Notification Failed, Sending to DeadLetterChannel", "Tries Left", maxTries-fMsg.RetryTime)
 					var job models.Jobs
-					log.Println("JOB ID failedUserID.JOBID : ", failedUserID.JobID)
-					log.Println("JOB ID fmsg.JOBID : ", fMsg.JobID)
 					if err := db.DB.Where("id=?", failedUserID.JobID).First(&job).Error; err != nil {
-						log.Printf("Error after passing [SUCCESS NOTIFICATION SENDING] %v\n", err)
+						slog.Error("Failed to fetch the job from DB", "User", fMsg.UserId, "Error", err)
 					} else {
 						job.Status = "failed"
 						if err := db.DB.Save(&job).Error; err != nil {
-							log.Printf("ERROR [SAVING SUCCEED JOB TO DB] : %v\n", err)
-						} else {
-							log.Println("JOB FAILED | SAVING THE JOB TO DB WITH [FAILED status]")
+							slog.Error("Failed to update the job status to DB", "User", fMsg.UserId, "Error", err)
 						}
 					}
+					fmsgInfo := models.FailedInfo{
+						AttemptedTime: fMsg.RetryTime,
+					}
+
+					dlqJob := models.DLQJob{
+						Error:         "Failed its max attempts of retry",
+						FailedMsgInfo: fmsgInfo.AttemptedTime,
+					}
 					select {
-					case deadMessageChannel <- *fMsg:
+					case deadMessageChannel <- dlqJob:
 					case <-rootContext.Done():
 						return
 					}

@@ -2,7 +2,7 @@ package utils
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/icodeologist/disasterwatch/internal/db"
@@ -47,11 +47,10 @@ func NearByTrustedUsers(nearbyUserIDS []uint) ([]uint, error) {
 
 // Users in the distance from the report posted in  radius like 20km?
 func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUsers []models.User, reportChan <-chan models.ReportMessage, affectedUserIdsChan chan<- models.AffectedUsersMessage) {
-	log.Printf("[ALL USER] count %d users \n", len(allUsers))
 	defer wg.Done()
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("RECOVERED IN STARTING EXTRACTION WORKER : %v\n", r)
+			slog.Error("Recovered Panic in GetUsersAffectedByDisaster", "Panic", r)
 		}
 	}()
 	// for normal operation flow
@@ -69,7 +68,7 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 			userLat := user.CachedLat
 			userLong := user.CachedLong
 			if !user.LocationCached || !report.ISLocationCached {
-				log.Println("User are Report location is not Cached")
+				slog.Warn("User or Report location not found", "Is User Cached", user.LocationCached, "Is Report Cached", report.ISLocationCached, "user_id", user.ID, "report_id", report.ID)
 				continue
 			}
 			radius := Haversine(*report.CachedLat, *report.CachedLong, *userLat, *userLong)
@@ -84,14 +83,13 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 				}
 				select {
 				case affectedUserIdsChan <- affectedUsersMsg:
-					log.Println("Pushed to the affected channel")
 					// if this case blocked we just drop the work
 				case <-ctx.Done():
-					log.Println("Shutdown fired. exiting")
+					slog.Info("Shutdown Fired", "Idle worker exiting", "Nothing to do")
 					return
 				}
 			} else {
-				log.Printf("No Users found near the radius of %v\n", radius)
+				slog.Warn("Found 0 users nearby", "report_id", report.ID, "report_location", report.Location)
 			}
 		}
 	}
@@ -100,7 +98,6 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 		case <-ctx.Done():
 			return
 		case reportMsg := <-reportChan:
-			log.Println("Started processing report")
 			processReport(reportMsg)
 		}
 	}

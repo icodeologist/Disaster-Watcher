@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,8 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/icodeologist/disasterwatch/internal/api/auth"
 	"github.com/icodeologist/disasterwatch/internal/api/handler"
-	"github.com/icodeologist/disasterwatch/internal/utils"
 	"github.com/icodeologist/disasterwatch/internal/worker"
+	"github.com/joho/godotenv"
 
 	"github.com/icodeologist/disasterwatch/internal/db"
 
@@ -25,6 +25,9 @@ import (
 )
 
 func main() {
+	// Logging with slog
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
 	//GRACEful shutdown
 	// Creating a internal channel with signalNOtifiy and ctx to kill children processes
 	rootCtx := context.Background()
@@ -37,18 +40,25 @@ func main() {
 	// Creating buffered channels for my worker pool
 	reportsChannel := make(chan models.ReportMessage, 10)
 	failedEmailsChan := make(chan models.FailedEmailMessage, 10)
-	deadLetterChannel := make(chan models.FailedEmailMessage, 10)
+	deadLetterChannel := make(chan models.DLQJob, 10)
 	affectedUsersIDChannel := make(chan models.AffectedUsersMessage, 10)
-	verficationMessageChannel := make(chan models.VerificationMessage, 10)
+	verficationMessageChannel := make(chan models.VerificationMessage, 1000)
 	//retry for failed message
 	maxRetries := 5
+
+	//loading the .env file
+	err := godotenv.Load(".env")
+	if err != nil {
+		slog.Error("Loading the .env file", "err", err)
+	}
 
 	// Connection to DB
 	if err := db.Connect(); err != nil {
 		log.Fatal(err)
 	}
-	log.Println("Getting all jobs that are still processing")
-	utils.RecoverPendingJobsFromDBOnStarting(verficationMessageChannel)
+	slog.Info("Getting all jobs that are still processing")
+	// utils.RecoverPendingJobsFromDBOnStarting(verficationMessageChannel)
+	// utils.GetAllDONEJOBS()
 	// utils.GetAllDONEJOBS()
 
 	// Putting all dependencies required for workers in workerServer
@@ -88,15 +98,13 @@ func main() {
 	// Graceful shutdown flow
 	// If we reciece any interruptiong or termination
 	<-signChannel
-	fmt.Println("recieved sigint")
-	fmt.Println("server stopping in few seconds")
-	// TODO: what if you make worker context pass timoute instead of cancel
-	// TODO: Shutdonw context is not passed to workers
-	// TODO:  NO way to send them timeout
+	slog.Info("recieved sigint")
+	slog.Info("server stopping in few seconds")
+	time.Sleep(3 * time.Second)
 	shutDownCtx, shtdownCanc := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shtdownCanc()
 	if err := server.Shutdown(shutDownCtx); err != nil {
-		log.Println("Server shutdown : ", err)
+		slog.Info("Server shutdown : ", err)
 	}
 	// close the root context at the end
 	// Each worker sees this for {select Case rootconetxt closed?}
@@ -105,5 +113,5 @@ func main() {
 	// until that this blocks
 	wg.Wait()
 	//TODO: BETTER LOGGING using slog
-	fmt.Println("server stopped")
+	slog.Info("server stopped")
 }
