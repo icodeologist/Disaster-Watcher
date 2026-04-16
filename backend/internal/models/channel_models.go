@@ -12,11 +12,13 @@ type ReportMessage struct {
 type AffectedUsersMessage struct {
 	JobID  int64
 	UserID uint
+	Report Report
 }
 
 type FailedEmailMessage struct {
 	JobID        int64
 	User         User
+	Report       Report
 	ErrorMessage error
 	RetryAttempt int
 	RetryDelay   time.Duration

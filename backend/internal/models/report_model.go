@@ -11,6 +11,7 @@ type Report struct {
 	ID               uint      `json:"id" gorm:"primaryKey"`
 	UserId           uint      `json:"userid"`
 	User             User      `gorm:"foreignKey:UserId"`
+	Title            string    `json:"title"`
 	Category         string    `json:"category" gorm:"not null"`    // flood or animals or landslide or rain or electricity outrage
 	Description      string    `json:"description" gorm:"not null"` // valid desc == and frequent similary reports at the same area or neaby -- Approve
 	Location         string    `json:"location"`

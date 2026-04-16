@@ -63,12 +63,22 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 					return
 				}
 				slog.Info("Email Sending", "User", affUserMsg.UserID, "Tries", "First Time")
-				err := emailservice.SendEmail(user.Email)
+				emailObj := models.EmailBody{
+					Title:      affUserMsg.Report.Title,
+					Location:   affUserMsg.Report.Location,
+					Precaution: "Please take care of you and watch out. Call this help line 3939393.",
+				}
+				emailHelper := models.EmailModel{
+					Email:     user.Email,
+					EmailBody: emailObj,
+				}
+				err := emailservice.SendEmail(emailHelper)
 				if err != nil {
 					slog.Warn("Failed to send Email", "User", affUserMsg.UserID)
 					failedMessage := &models.FailedEmailMessage{
 						JobID:        affUserMsg.JobID,
 						User:         user,
+						Report:       affUserMsg.Report,
 						ErrorMessage: err,
 						RetryAttempt: 0,
 					}
@@ -136,6 +146,7 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 				fMsg := &models.FailedEmailMessage{
 					JobID:        failedUserID.JobID,
 					User:         failedUserID.User,
+					Report:       failedUserID.Report,
 					ErrorMessage: failedUserID.ErrorMessage,
 					RetryAttempt: failedUserID.RetryAttempt + 1,
 					RetryDelay:   time.Duration(timeTOwait) * time.Second,
@@ -148,7 +159,16 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 						return
 					}
 					slog.Info("Retrying", "User", fMsg.User.ID, "Retry time", fMsg.RetryAttempt, "Retrying again in", fMsg.RetryDelay)
-					err := emailservice.SendEmail(failedUserID.User.Email)
+					emailObj := models.EmailBody{
+						Title:      fMsg.Report.Title,
+						Location:   fMsg.Report.Location,
+						Precaution: "Please take care of you and watch out. Call this help line 3939393.",
+					}
+					emailHelper := models.EmailModel{
+						Email:     fMsg.User.Email,
+						EmailBody: emailObj,
+					}
+					err := emailservice.SendEmail(emailHelper)
 					if err != nil {
 						select {
 						case failedEmailsChan <- *fMsg:

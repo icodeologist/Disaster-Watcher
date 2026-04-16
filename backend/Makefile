@@ -1,5 +1,5 @@
 API_URL=http://localhost:3000/api/reports
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InJ5YW5AZXhhbXBsZS5jb20iLCJleHAiOjE3NzU3OTQ2NTUsImlkIjo2LCJ1c2VybmFtZSI6InJ5YW5fc2NvdHQifQ.eOes6e_AiVZJ4qSqckcgAhqKHjRQclANoQem-RJzO74"
+TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzY0MjYwNTYsImlkIjo2LCJ1c2VybmFtZSI6InJ5YW5fc2NvdHQifQ.DkVJK2qiEKfLlrCQyRYPtRFLkYWk3Dj_3eAAhB2vZfM"
 BODY='{"category":"flood","description":"test","location":"Texas, USA","priority":"high","status":"unverified"}'
 
 
@@ -27,7 +27,7 @@ ten-sec:
 
 # Light load sanity test
 light:
-	hey -n 20 -c 5 \
+	hey -n 100 -c 100 \
 	-m POST \
 	-H "Content-Type: application/json" \
 	-H "Authorization: Bearer $(TOKEN)" \

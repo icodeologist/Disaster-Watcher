@@ -44,7 +44,7 @@ func main() {
 	// If some message failed after retry put them here and later let admin check through it
 	deadLetterChannel := make(chan models.DLQJob, 100)
 	affectedUsersIDChannel := make(chan models.AffectedUsersMessage, 10)
-	verficationMessageChannel := make(chan models.VerificationMessage, 1000)
+	verficationMessageChannel := make(chan models.VerificationMessage, 10)
 	//retry for failed message
 	maxRetries := 5
 
@@ -59,7 +59,7 @@ func main() {
 		log.Fatal(err)
 	}
 	slog.Info("Getting all jobs that are still processing")
-	utils.RecoverPendingJobsFromDBOnStarting(verficationMessageChannel)
+	utils.RecoverMidProcessingJobs(verficationMessageChannel)
 	// utils.GetAllDONEJOBS()
 	// utils.GetAllDONEJOBS()
 
@@ -101,12 +101,10 @@ func main() {
 	// If we reciece any interruptiong or termination
 	<-signChannel
 	slog.Info("recieved sigint")
-	slog.Info("server stopping in few seconds")
-	time.Sleep(3 * time.Second)
 	shutDownCtx, shtdownCanc := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shtdownCanc()
 	if err := server.Shutdown(shutDownCtx); err != nil {
-		slog.Info("Server shutdown : ", err)
+		slog.Info("Server shutdown : ", "error", err)
 	}
 	// close the root context at the end
 	// Each worker sees this for {select Case rootconetxt closed?}
@@ -114,6 +112,5 @@ func main() {
 	// waiting for all the go routines to finish
 	// until that this blocks
 	wg.Wait()
-	//TODO: BETTER LOGGING using slog
 	slog.Info("server stopped")
 }

@@ -31,6 +31,23 @@ func RecoverPendingJobsFromDBOnStarting(verifcationChannel chan<- models.Verific
 		slog.Info("No pending jobs in DB")
 	}
 }
+func RecoverMidProcessingJobs(verifcationChannel chan<- models.VerificationMessage) {
+	var midProcessingJobs []models.Jobs
+	if err := db.DB.Where("status=?", "pending").Find(&midProcessingJobs).Error; err != nil {
+		slog.Error("failed to fetch the jobs with processing status", "error", err)
+	}
+	if len(midProcessingJobs) > 0 {
+		for _, job := range midProcessingJobs {
+			vmsg := models.VerificationMessage{
+				JobID: job.Id,
+			}
+			verifcationChannel <- vmsg
+			slog.Info("Job restarted", "started_time", time.Now())
+		}
+	} else {
+		slog.Info("No Processing jobs in DB")
+	}
+}
 
 func GetAllDONEJOBS() {
 	var job []models.Jobs
