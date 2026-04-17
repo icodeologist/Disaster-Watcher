@@ -18,27 +18,8 @@ Built in Go, from scratch, without reaching for managed queues or message broker
 ---
 
 ## Architecture
-
-```
-POST /report
-     │
-     ▼
-Insert Job → DB (status: pending)
-     │
-     ▼
-Verification Workers
-     │   verify report, score it
-     ▼
-Extract Workers
-     │   Haversine formula → find users within 20km
-     ▼
-Notification Workers  ──── fail ──→  Retry Workers (exponential backoff)
-     │                                      │
-     │                               max retries hit
-     │                                      │
-     ▼                                      ▼
-Job marked done                      Dead Letter Queue
-```
+## Notification pipeline
+![Notification Pipeline](./disasterNotifierArchDiagram.drawio.png)
 
 ### Core systems built from scratch
 
