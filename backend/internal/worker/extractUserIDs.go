@@ -2,16 +2,16 @@ package worker
 
 import (
 	"context"
-	"log/slog"
-	"math"
-	"sync"
-	"time"
-
+	"fmt"
 	"github.com/icodeologist/disasterwatch/internal/db"
 	emailservice "github.com/icodeologist/disasterwatch/internal/email_service"
 	"github.com/icodeologist/disasterwatch/internal/models"
 	"github.com/icodeologist/disasterwatch/internal/utils"
 	"golang.org/x/time/rate"
+	"log/slog"
+	"math"
+	"sync"
+	"time"
 )
 
 // Get the users effected from the disasters and push their id to affuserchannel
@@ -149,7 +149,7 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 					Report:       failedUserID.Report,
 					ErrorMessage: failedUserID.ErrorMessage,
 					RetryAttempt: failedUserID.RetryAttempt + 1,
-					RetryDelay:   time.Duration(timeTOwait) * time.Second,
+					RetryDelay:   time.Duration(timeTOwait) * time.Millisecond,
 				}
 				if fMsg.RetryAttempt <= maxTries {
 					select {
@@ -197,14 +197,17 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 							slog.Error("Failed to update the job status to DB", "User", fMsg.User.ID, "Error", err)
 						}
 					}
-					fmsgInfo := models.FailedInfo{
-						Error: fMsg.ErrorMessage,
+					dlqJob := models.DLQJob{
+						ErrorMessage:   fmt.Sprintf("ERR_MAX_RETRY_EXHAUSTER : %v", fMsg.ErrorMessage),
+						FailedMsgJOBID: fMsg.JobID,
+						CreatedAt:      time.Now(),
+						WhereFailed:    "FailedEmailSendingWorker",
+					}
+					if err := db.DB.Save(&dlqJob).Error; err != nil {
+						slog.Error("Error saving dlqjob to DB", "err", err)
+						return
 					}
 
-					dlqJob := models.DLQJob{
-						ErrorInfo:      fmsgInfo.Error.Error(),
-						FailedMsgJOBID: fMsg.JobID,
-					}
 					select {
 					// if faile after maxtries  == retry attempts
 					// push to DL
