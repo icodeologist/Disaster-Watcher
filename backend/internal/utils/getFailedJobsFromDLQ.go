@@ -17,7 +17,7 @@ func GetAllInfoFromDeadletterQueue() {
 	} else {
 		slog.Info("Jobs in DLQ", "Length", len(job))
 		for _, j := range job {
-			slog.Info("Jon in DLQ", "failed-job-id", j.FailedMsgJOBID, "why it failed", j.ErrorInfo)
+			slog.Info("Jobs in DLQ", "id", j.ID, "Error_Message", j.ErrorMessage, "Job ID", j.FailedMsgJOBID, "CreatedAt", j.CreatedAt, "Which worker it failed", j.WhereFailed)
 		}
 	}
 }

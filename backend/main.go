@@ -42,7 +42,7 @@ func main() {
 	reportsChannel := make(chan models.ReportMessage, 10)
 	failedEmailsChan := make(chan models.FailedEmailMessage, 10)
 	// If some message failed after retry put them here and later let admin check through it
-	deadLetterChannel := make(chan models.DLQJob, 100)
+	deadLetterChannel := make(chan models.DLQJob, 1000)
 	affectedUsersIDChannel := make(chan models.AffectedUsersMessage, 10)
 	verficationMessageChannel := make(chan models.VerificationMessage, 10)
 	//retry for failed message
@@ -59,7 +59,8 @@ func main() {
 		log.Fatal(err)
 	}
 	slog.Info("Getting all jobs that are still processing")
-	utils.RecoverMidProcessingJobs(verficationMessageChannel)
+	// utils.RecoverMidProcessingJobs(verficationMessageChannel)
+	utils.GetAllInfoFromDeadletterQueue()
 	// utils.GetAllDONEJOBS()
 	// utils.GetAllDONEJOBS()
 

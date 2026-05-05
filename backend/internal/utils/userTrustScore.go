@@ -2,7 +2,6 @@ package utils
 
 import (
 	"context"
-	"time"
 
 	"log/slog"
 
@@ -16,54 +15,15 @@ func UserTrustScore(user models.User) int {
 
 //TODO: Refactor this shit code
 
-func Helper(ctx context.Context, user models.User, report *models.Report) (string, int, error) {
-	// FIX: Always start with 0
-	score := 10 // For testing purpose
-	radius := Haversine(*user.CachedLat, *user.CachedLong, *report.CachedLat, *report.CachedLong)
-	if radius <= 20 {
-		score += 3
-	} // TODO : FIX THIS scoring system. Its too harsh on new user
-	//check user reputation
-
-	switch {
-	case user.TotalReportPosted >= 10:
-		score += 3
-	case user.TotalReportPosted >= 3:
-		score += 1
-	case user.TotalReportPosted == 0:
-		score -= 1
-	}
-
-	// check if similar report are posted near the user posted in a given time
-	var similarReportPosted []models.Report
-	err := db.DB.Where("category=? AND id != ? AND created_at BETWEEN ? AND ?",
-		report.Category,
-		report.ID,
-		report.CreatedAt.Add(-24*time.Hour),
-		report.CreatedAt,
-	).Find(&similarReportPosted).Error
-	if err != nil {
-		return "", 0, err
-	}
-	switch {
-	case len(similarReportPosted) >= 5:
-		score += 3
-	case len(similarReportPosted) >= 2:
-		score += 1
-	case len(similarReportPosted) == 0:
-		score -= 1
-	}
-
-	if score >= 2 {
-		report.Status = "Verified"
+func Helper(ctx context.Context, user models.User, report *models.Report) (string, error) {
+	if !user.LocationCached || !report.ISLocationCached {
+		return "Unverified", nil
+	} else if report.Description == "" || len(report.Description) < 10 ||
+		report.Title == "" || len(report.Title) < 10 {
+		return "Unverified", nil
 	} else {
-		report.Status = "Unverified"
+		return "Verified", nil
 	}
-	err = db.DB.Save(report).Error
-	if err != nil {
-		return "", 0, err
-	}
-	return report.Status, score, nil
 }
 
 // report trust score
@@ -78,12 +38,12 @@ func VerifyReportPostedByUser(ctx context.Context, report *models.Report, user m
 		}
 		return
 	}
-	reportStatus, score, err := Helper(ctx, user, report)
+	reportStatus, err := Helper(ctx, user, report)
 	if err != nil {
 		slog.Error("Report scoring algorithm returned ", "Error", err)
 	}
 	if reportStatus == "Verified" {
-		slog.Info("Verified", "report_id", report.ID, "report_score", score)
+		slog.Info("Verified", "report_id", report.ID)
 		// if shutdown fired and waiting to send drop the report
 		reportMsg := models.ReportMessage{
 			JobID:  jobId,

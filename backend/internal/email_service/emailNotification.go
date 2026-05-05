@@ -3,7 +3,7 @@ package emailservice
 import (
 	"fmt"
 	// "log/slog"
-	"math/rand/v2"
+	// "math/rand/v2"
 	// "net/smtp"
 
 	"github.com/icodeologist/disasterwatch/internal/models"
@@ -32,13 +32,14 @@ func SendEmail(emailObj models.EmailModel) error {
 	// 	return nil
 	// }
 
-	n := rand.IntN(100)
-	println("N : ", n)
-	res := n % 2
-	if res == 0 {
-		fmt.Println("Email is sent to ", emailObj.Email)
-		return nil
-	} else {
-		return fmt.Errorf("Failed to send email to ", emailObj.Email)
-	}
+	// n := rand.IntN(100)
+	// println("N : ", n)
+	// res := n % 2
+	// if res == 0 {
+	// 	fmt.Println("Email is sent to ", emailObj.Email)
+	// 	return nil
+	// } else {
+	// 	return fmt.Errorf("Failed to send email to ", emailObj.Email)
+	// }
+	return fmt.Errorf("Failed to send email to : %v\n", emailObj.Email)
 }

@@ -30,9 +30,10 @@ func Connect() error {
 	var err error
 	DB, err = gorm.Open(postgres.Open(dbUri), &gorm.Config{})
 	if err != nil {
+		slog.Error("Failed to connect to DB", "error", err)
 		return err
 	} else {
-		slog.Error("Successfully connected to databse")
+		slog.Info("Successfully connected to databse")
 	}
 
 	DB.AutoMigrate(&models.Report{}, &models.User{}, &models.Jobs{}, &models.DLQJob{})
