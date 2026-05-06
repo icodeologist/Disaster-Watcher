@@ -81,7 +81,7 @@ func main() {
 	worker.StartFailedEmailSendingWorker(workContext, &wg, 5, maxRetries, failedEmailsChan, deadLetterChannel)
 
 	// rate limiting middleware
-	ratelimitMiddleware := auth.NewRateLimiterMiddleware(1, 10)
+	ratelimitMiddleware := auth.NewRateLimiterMiddleware(10, 5)
 	// gin router engine
 	r := gin.Default()
 	// setting up routes

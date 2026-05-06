@@ -6,6 +6,8 @@ import (
 	"log/slog"
 )
 
+// having 10minutes to stimulate the possible delays from retry worker
+// could be reduced to even 5 minutes
 func RecoverStalledJobs(verificationChannel chan<- models.VerificationMessage) {
 	var stalledJobs []models.Jobs
 	if err := db.DB.Where("status=? AND NOW() - started_at > INTERVAL '10 minutes'", "processing").Find(&stalledJobs).Error; err != nil {
