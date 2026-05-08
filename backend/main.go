@@ -86,9 +86,13 @@ func main() {
 	r := gin.Default()
 	// setting up routes
 	routes.SetUpRoutes(r, workerServer, ratelimitMiddleware)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "3000"
+	}
 
 	server := &http.Server{
-		Addr:    ":3000",
+		Addr:    ":" + port,
 		Handler: r.Handler(),
 	}
 
