@@ -1,0 +1,14 @@
+package handler
+
+import (
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+func GetReportNearbyByTime(c *gin.Context) {
+	hours := c.Param("hours")
+	minutes := time.Duration(int(hours)) * time.Hour
+	minutes = minutes.Minutes()
+
+}

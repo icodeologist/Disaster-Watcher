@@ -24,6 +24,7 @@ func SetUpRoutes(router *gin.Engine, server *handler.Server, rateLimiter *auth.R
 		authMiddlewareRouter.GET("/reports", handler.GetAllReportsByUserID)
 		authMiddlewareRouter.GET("/get_current_user", auth.GetUserProfileInfo)
 		authMiddlewareRouter.GET("report/:id", handler.GetReportById)
+		authMiddlewareRouter.GET("nearby_reports/:hours", handler.GetReportNearbyPostedLastHours)
 	}
 
 }

@@ -37,7 +37,7 @@ type EmailrateLimiter struct {
 func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n int, affUsersIdChannel <-chan models.AffectedUsersMessage, failedEmailsChan chan<- models.FailedEmailMessage) {
 	slog.Info("NOTIFICATION WORKERS STARTED", "COUNT", n)
 	emailRateL := &EmailrateLimiter{
-		limiter: rate.NewLimiter(2, 5),
+		limiter: rate.NewLimiter(2, 3),
 	}
 
 	for i := 0; i < n; i++ {

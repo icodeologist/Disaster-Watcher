@@ -1,5 +1,5 @@
 API_URL=http://localhost:3000/api/reports
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzY3MzQ0ODcsImlkIjo2LCJ1c2VybmFtZSI6InJ5YW5fc2NvdHQifQ.k9FoxvfPkijzUYHZvonaIfPlPYmP_FqpGaLAz6ZOGRU"
+TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzgzMDI5MjUsImlkIjo2LCJ1c2VybmFtZSI6InJ5YW5fc2NvdHQifQ.F-dZJZDjK50uRemGvM176LzJGFXyqq_tKaoOrDVkhqM"
 BODY='{"category":"flood","description":"test","location":"Texas, USA","priority":"high","status":"unverified"}'
 
 
