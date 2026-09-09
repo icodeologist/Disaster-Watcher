@@ -79,6 +79,7 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 				affectedUsersMsg := models.AffectedUsersMessage{
 					JobID:  reportMsg.JobID,
 					UserID: user.ID,
+					Report: report,
 				}
 				select {
 				case affectedUserIdsChan <- affectedUsersMsg:
