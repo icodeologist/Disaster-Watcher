@@ -17,22 +17,22 @@ func Connect() error {
 	// if err != nil {
 	// 	return err
 	// }
-	// host := os.Getenv("HOST")
-	// dbPort := os.Getenv("DBPORT")
-	// user := os.Getenv("DBUSER")
-	// password := os.Getenv("PASSWORD")
-	// dbName := os.Getenv("NAME")
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		return fmt.Errorf("Database_url env var not set")
-	}
+	host := os.Getenv("HOST")
+	dbPort := os.Getenv("DBPORT")
+	user := os.Getenv("DBUSER")
+	password := os.Getenv("PASSWORD")
+	dbName := os.Getenv("NAME")
+	// dbURL := os.Getenv("DATABASE_URL")
+	// if dbURL == "" {
+	// 	return fmt.Errorf("Database_url env var not set")
+	// }
 
 	//connecting to database
-	// dbUri := fmt.Sprintf("host=%s user=%s dbname=%s sslmode=disable password=%v port=%v", host, user, dbName, password, dbPort)
+	dbUri := fmt.Sprintf("host=%s user=%s dbname=%s sslmode=disable password=%v port=%v", host, user, dbName, password, dbPort)
 
 	//open the connection to database
 	var err error
-	DB, err = gorm.Open(postgres.Open(dbURL), &gorm.Config{})
+	DB, err = gorm.Open(postgres.Open(dbUri), &gorm.Config{})
 	if err != nil {
 		slog.Error("Failed to connect to DB", "error", err)
 		return err
@@ -40,7 +40,9 @@ func Connect() error {
 		slog.Info("Successfully connected to databse")
 	}
 
-	DB.AutoMigrate(&models.Report{}, &models.User{}, &models.Jobs{}, &models.DLQJob{}, &models.EmailBody{})
+	if err := DB.AutoMigrate(&models.Report{}, &models.User{}, &models.Jobs{}, &models.DLQJob{}, &models.EmailBody{}, &models.ProcessedNotification{}); err != nil {
+		return fmt.Errorf("migrate database: %w", err)
+	}
 	return nil
 
 }
