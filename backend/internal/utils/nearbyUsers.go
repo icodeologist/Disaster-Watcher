@@ -72,8 +72,7 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 				continue
 			}
 			radius := Haversine(*report.CachedLat, *report.CachedLong, *userLat, *userLong)
-			// FIX: fix this
-			if radius > 20 {
+			if radius <= 20 {
 				// incase if the affectedUserIdsChan is full and incase of blocking
 				// only if the shutdonw signal is fired instead of waiting just check if fired and return
 				// Because if downstream workers are already left this will keep hanging
