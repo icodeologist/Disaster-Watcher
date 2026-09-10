@@ -3,13 +3,14 @@ package worker
 import (
 	"context"
 	"fmt"
-	"github.com/icodeologist/disasterwatch/internal/db"
-	emailservice "github.com/icodeologist/disasterwatch/internal/email_service"
-	"github.com/icodeologist/disasterwatch/internal/models"
 	"log/slog"
 	"math"
 	"sync"
 	"time"
+
+	"github.com/icodeologist/disasterwatch/internal/db"
+	emailservice "github.com/icodeologist/disasterwatch/internal/email_service"
+	"github.com/icodeologist/disasterwatch/internal/models"
 )
 
 func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGroup, n int, maxTries int, failedEmailsChan chan models.FailedEmailMessage, deadMessageChannel chan models.DLQJob) {
@@ -32,12 +33,13 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 				}
 				timeTOwait := math.Pow(2, float64(attempt))
 				fMsg := &models.FailedEmailMessage{
+					DeliveryID:   failedUserID.DeliveryID,
 					JobID:        failedUserID.JobID,
 					User:         failedUserID.User,
 					Report:       failedUserID.Report,
 					ErrorMessage: failedUserID.ErrorMessage,
 					RetryAttempt: failedUserID.RetryAttempt + 1,
-					RetryDelay:   time.Duration(timeTOwait) * time.Millisecond,
+					RetryDelay:   time.Duration(timeTOwait) * time.Second,
 				}
 				if fMsg.RetryAttempt <= maxTries {
 					select {
@@ -56,8 +58,27 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 						Email:     fMsg.User.Email,
 						EmailBody: emailObj,
 					}
+
+					claim := db.DB.Model(&models.ProcessedNotification{}).
+						Where("id = ? AND job_id = ? AND user_id = ? AND status = ?", fMsg.DeliveryID, fMsg.JobID, fMsg.User.ID, "retrying").
+						Updates(map[string]interface{}{"status": "processing", "attempts": fMsg.RetryAttempt + 1})
+					if claim.Error != nil {
+						slog.Error("Failed to claim notification retry", "delivery_id", fMsg.DeliveryID, "error", claim.Error)
+						return
+					}
+					if claim.RowsAffected == 0 {
+						slog.Info("Notification retry already claimed or completed", "delivery_id", fMsg.DeliveryID)
+						return
+					}
+
 					err := emailservice.SendEmail(emailHelper)
 					if err != nil {
+						if updateErr := db.DB.Model(&models.ProcessedNotification{}).Where("id = ?", fMsg.DeliveryID).Updates(map[string]interface{}{
+							"status": "retrying", "last_error": err.Error(),
+						}).Error; updateErr != nil {
+							slog.Error("Failed to update notification retry", "delivery_id", fMsg.DeliveryID, "error", updateErr)
+							return
+						}
 						select {
 						case failedEmailsChan <- *fMsg:
 						case <-rootContext.Done():
@@ -65,25 +86,27 @@ func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGro
 						}
 					} else {
 						slog.Info("email sent successfully", "User", fMsg.User.ID, "attempt", fMsg.RetryAttempt)
-						var job models.Jobs
-						if err := db.DB.Where("id=?", failedUserID.JobID).First(&job).Error; err != nil {
-							slog.Error("Failed to fetch the job from DB", "User", fMsg.User.ID, "Error", err)
-						} else {
-							job.Status = "done"
-							if err := db.DB.Save(&job).Error; err != nil {
-								slog.Error("Failed to update the job status to DB", "User", fMsg.User.ID, "Error", err)
-							}
+						now := time.Now()
+						if err := db.DB.Model(&models.ProcessedNotification{}).Where("id = ?", fMsg.DeliveryID).Updates(map[string]interface{}{
+							"status": "success", "sent_at": &now, "last_error": "",
+						}).Error; err != nil {
+							slog.Error("Failed to mark notification retry successful", "delivery_id", fMsg.DeliveryID, "error", err)
+							return
+						}
+						if err := finalizeNotificationJob(fMsg.JobID); err != nil {
+							slog.Error("Failed to finalize notification job", "job_id", fMsg.JobID, "error", err)
 						}
 					}
 				} else {
-					var job models.Jobs
-					if err := db.DB.Where("id=?", failedUserID.JobID).First(&job).Error; err != nil {
-						slog.Error("Failed to fetch the job from DB", "User", fMsg.User.ID, "Error", err)
-					} else {
-						job.Status = "failed"
-						if err := db.DB.Save(&job).Error; err != nil {
-							slog.Error("Failed to update the job status to DB", "User", fMsg.User.ID, "Error", err)
-						}
+					now := time.Now()
+					if err := db.DB.Model(&models.ProcessedNotification{}).Where("id = ? AND status <> ?", fMsg.DeliveryID, "success").Updates(map[string]interface{}{
+						"status": "failed", "failed_at": &now, "last_error": fmt.Sprint(fMsg.ErrorMessage),
+					}).Error; err != nil {
+						slog.Error("Failed to mark notification delivery failed", "delivery_id", fMsg.DeliveryID, "error", err)
+						return
+					}
+					if err := finalizeNotificationJob(fMsg.JobID); err != nil {
+						slog.Error("Failed to finalize notification job", "job_id", fMsg.JobID, "error", err)
 					}
 					dlqJob := models.DLQJob{
 						ErrorMessage:   fmt.Sprintf("ERR_MAX_RETRY_EXHAUSTER : %v", fMsg.ErrorMessage),

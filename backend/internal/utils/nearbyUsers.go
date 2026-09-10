@@ -2,11 +2,13 @@ package utils
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 
 	"github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
+	"gorm.io/gorm"
 )
 
 func GetNearbyUsers(atLat float64, atLong float64, radiusInKm float64) ([]uint, error) {
@@ -63,6 +65,7 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 	// wg.WAIT() in main unblocks and we shutdown
 	//
 	processReport := func(reportMsg models.ReportMessage) {
+		var affectedUsers []models.AffectedUsersMessage
 		for _, user := range allUsers {
 			report := reportMsg.Report
 			userLat := user.CachedLat
@@ -73,23 +76,46 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 			}
 			radius := Haversine(*report.CachedLat, *report.CachedLong, *userLat, *userLong)
 			if radius <= 20 {
-				// incase if the affectedUserIdsChan is full and incase of blocking
-				// only if the shutdonw signal is fired instead of waiting just check if fired and return
-				// Because if downstream workers are already left this will keep hanging
-				affectedUsersMsg := models.AffectedUsersMessage{
+				affectedUsers = append(affectedUsers, models.AffectedUsersMessage{
 					JobID:  reportMsg.JobID,
 					UserID: user.ID,
 					Report: report,
+				})
+			}
+		}
+
+		if len(affectedUsers) == 0 {
+			if err := db.DB.Model(&models.Jobs{}).Where("id = ?", reportMsg.JobID).Update("status", "done").Error; err != nil {
+				slog.Error("Failed to finish job with no affected users", "job_id", reportMsg.JobID, "error", err)
+			}
+			return
+		}
+
+		err := db.DB.Transaction(func(tx *gorm.DB) error {
+			for i := range affectedUsers {
+				delivery := models.ProcessedNotification{
+					IdempotencyKey: fmt.Sprintf("%d+%d", affectedUsers[i].UserID, reportMsg.JobID),
+					JobID:          reportMsg.JobID,
+					UserID:         affectedUsers[i].UserID,
+					Status:         "pending",
 				}
-				select {
-				case affectedUserIdsChan <- affectedUsersMsg:
-					// if this case blocked we just drop the work
-				case <-ctx.Done():
-					slog.Info("Shutdown Fired", "Idle worker exiting", "Nothing to do")
-					return
+				if err := tx.Create(&delivery).Error; err != nil {
+					return err
 				}
-			} else {
-				slog.Warn("Found 0 users nearby", "report_id", report.ID, "report_location", report.Location)
+				affectedUsers[i].DeliveryID = delivery.ID
+			}
+			return tx.Model(&models.Jobs{}).Where("id = ?", reportMsg.JobID).Update("status", "processing").Error
+		})
+		if err != nil {
+			slog.Error("Failed to create notification deliveries", "job_id", reportMsg.JobID, "error", err)
+			return
+		}
+
+		for _, affectedUser := range affectedUsers {
+			select {
+			case affectedUserIdsChan <- affectedUser:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}
@@ -97,7 +123,10 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 		select {
 		case <-ctx.Done():
 			return
-		case reportMsg := <-reportChan:
+		case reportMsg, ok := <-reportChan:
+			if !ok {
+				return
+			}
 			processReport(reportMsg)
 		}
 	}

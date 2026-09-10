@@ -10,12 +10,14 @@ type ReportMessage struct {
 }
 
 type AffectedUsersMessage struct {
-	JobID  int64
-	UserID uint
-	Report Report
+	DeliveryID uint
+	JobID      int64
+	UserID     uint
+	Report     Report
 }
 
 type FailedEmailMessage struct {
+	DeliveryID   uint
 	JobID        int64
 	User         User
 	Report       Report
