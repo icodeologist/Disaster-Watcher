@@ -120,7 +120,6 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 					slog.Info("shutdown fired, stopping workers")
 					return
 				case affectedUserMsg, ok := <-affUsersIdChannel:
-					slog.Info("Affected User INFO", "affectedUserMsg", affectedUserMsg)
 					if !ok {
 						slog.Info("affected users channel closed, worker exiting")
 						return
