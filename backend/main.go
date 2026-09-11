@@ -67,10 +67,13 @@ func main() {
 	worker.StartNotificationWorker(workContext, &wg, 5, deliveryChannel, retryDeliveryChannel)
 	worker.StartFailedEmailSendingWorker(workContext, &wg, 5, maxRetries, retryDeliveryChannel, deadLetterChannel)
 
-	// Rebuild channel messages for unfinished deliveries stored before a restart.
+	// Rebuild channel messages for unfinished work stored before a restart.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		if err := utils.RecoverUnfinishedJobs(workContext, verificationChannel); err != nil && workContext.Err() == nil {
+			slog.Error("Failed to recover unfinished jobs", "error", err)
+		}
 		if err := utils.RecoverNotificationDeliveries(workContext, deliveryChannel, retryDeliveryChannel, 10*time.Minute); err != nil && workContext.Err() == nil {
 			slog.Error("Failed to recover notification deliveries", "error", err)
 		}
