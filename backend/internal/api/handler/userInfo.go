@@ -2,7 +2,6 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -11,8 +10,13 @@ import (
 )
 
 func GetUserInfo(c *gin.Context) {
-	id := c.Param("id")
-	fmt.Println("ID :", id)
+	id, ok := c.Get("userId")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "StatusUnauthorized",
+		})
+		return
+	}
 	var user models.User
 	if err := db.DB.Where("id=?", id).First(&user).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
