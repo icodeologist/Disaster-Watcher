@@ -60,7 +60,7 @@ func (s *Server) CreateReport(c *gin.Context) {
 		return
 	}
 
-	if err := utils.ConvertReportLocationTOLatAndLong(&userReport); err != nil {
+	if err := utils.ConvertReportLocationTOLatAndLong(c.Request.Context(), &userReport); err != nil {
 		println("err : ", err)
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Success: false,

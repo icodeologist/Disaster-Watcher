@@ -57,7 +57,7 @@ func UserRegistration(c *gin.Context) {
 	user.Email = userInput.Email
 	user.Location = userInput.Location
 
-	err = utils.CachedUserCords(&user)
+	err = utils.CachedUserCords(c.Request.Context(), &user)
 	fmt.Println("Done with caching passwords")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{

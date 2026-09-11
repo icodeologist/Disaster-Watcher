@@ -15,13 +15,17 @@ import (
 // if not it calls the ForwardGeoCoding function to get the lat long from the user location
 // and updates the user model with the cached lat long and sets the LocationCached to true
 // TODO: add redis cashing for already updated locaitons
-func CachedUserCords(user *models.User) error {
+func CachedUserCords(requestContext context.Context, user *models.User) error {
+	return cachedUserCords(requestContext, user, GetLATLONGfromUserLocation)
+}
+
+func cachedUserCords(requestContext context.Context, user *models.User, geocode func(context.Context, string) (*models.Location, error)) error {
 	if user.LocationCached && user.CachedLat != nil && user.CachedLong != nil {
 		return nil
 	}
 	// calling notinatim api
 	var location *models.Location
-	location, err := GetLATLONGfromUserLocation(user.Location)
+	location, err := geocode(requestContext, user.Location)
 	if err != nil {
 		return fmt.Errorf(" ERROR : %v", err)
 	}
@@ -33,12 +37,12 @@ func CachedUserCords(user *models.User) error {
 }
 
 // cahchedCords for our report model
-func ConvertReportLocationTOLatAndLong(report *models.Report) error {
+func ConvertReportLocationTOLatAndLong(requestContext context.Context, report *models.Report) error {
 	if report.ISLocationCached || (report.CachedLat != nil && report.CachedLong != nil) {
 		return nil
 	}
 
-	location, err := GetLATLONGfromUserLocation(report.Location)
+	location, err := GetLATLONGfromUserLocation(requestContext, report.Location)
 	if err != nil {
 		return fmt.Errorf("ERROR : %v", err)
 	}
