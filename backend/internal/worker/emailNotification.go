@@ -16,6 +16,12 @@ type EmailrateLimiter struct {
 	limiter *rate.Limiter
 }
 
+// Third step.
+// For each affected users send email using rate limiter
+// if failed using the ProcessedNotification col update error and push to failedEmailsChan
+// if passed update ProcessedNotification staus and wait for all of them to finish
+// once finished items will finalizeNotificationJob to determine the overall status of the job
+
 func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n int, affUsersIdChannel <-chan models.AffectedUsersMessage, failedEmailsChan chan<- models.FailedEmailMessage) {
 	slog.Info("NOTIFICATION WORKERS STARTED", "COUNT", n)
 	emailRateL := &EmailrateLimiter{
@@ -73,15 +79,28 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 					Location:   affUserMsg.Report.Location,
 					Precaution: "Please take care of you and watch out. Call this help line 3939393.",
 				}
-				emailHelper := models.EmailModel{
-					Email:     user.Email,
-					EmailBody: emailObj,
-				}
-				err := emailservice.SendEmail(emailHelper)
+				var pn models.ProcessedNotification
+				err := db.DB.Where("id=?", affUserMsg.DeliveryID).First(&pn).Error
 				if err != nil {
+					slog.Error("processed notification fetch failed", "error", err)
+					return
+				}
+
+				emailHelper := models.EmailModel{
+					IdempotencyKey: pn.IdempotencyKey,
+					Email:          user.Email,
+					EmailBody:      emailObj,
+				}
+				saveErr := db.DB.Save(&emailHelper).Error
+				if saveErr != nil {
+					slog.Error("save email helper failed", "error", saveErr)
+					return
+				}
+				sendEmailErr := emailservice.SendEmail(emailHelper)
+				if sendEmailErr != nil {
 					slog.Warn("Failed to send Email", "User", affUserMsg.UserID)
 					if updateErr := db.DB.Model(&models.ProcessedNotification{}).Where("id = ?", affUserMsg.DeliveryID).Updates(map[string]interface{}{
-						"status": "retrying", "last_error": err.Error(),
+						"status": "retrying", "last_error": sendEmailErr.Error(),
 					}).Error; updateErr != nil {
 						slog.Error("Failed to update notification delivery", "delivery_id", affUserMsg.DeliveryID, "error", updateErr)
 						return
@@ -91,7 +110,7 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 						JobID:        affUserMsg.JobID,
 						User:         user,
 						Report:       affUserMsg.Report,
-						ErrorMessage: err,
+						ErrorMessage: sendEmailErr,
 						RetryAttempt: 0,
 					}
 					// same logic
