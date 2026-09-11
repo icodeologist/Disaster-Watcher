@@ -39,6 +39,11 @@ func fetchUserById(userId uint) (models.User, error) {
 	return user, nil
 }
 
+// start of the pipeline
+// once report posted directly pushed to verificationMsgChannel
+// here report is verified
+// TODO: Verification scoring algorithm yet to implement
+
 // Start of notification pipeline
 func StartVerificationWorkers(rootCtx context.Context, wg *sync.WaitGroup, n int, verificationMsgChannel chan models.VerificationMessage, reportChan chan models.ReportMessage) {
 	slog.Info("VERIFICATION WORKERS STARTED", "COUNT", n)
