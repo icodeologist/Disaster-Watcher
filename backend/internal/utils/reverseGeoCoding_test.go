@@ -1,47 +1,90 @@
 package utils
 
 import (
-	"github.com/stretchr/testify/assert"
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
-func TestReversegeocoding(t *testing.T) {
+func TestReverseGeocoding(t *testing.T) {
 	tests := []struct {
-		name          string
-		latitude      float64
-		longitude     float64
-		expectederror bool
+		name        string
+		status      int
+		body        string
+		expectError bool
 	}{
 		{
-			name:          "happy path",
-			latitude:      40.7128,
-			longitude:     -74.0060,
-			expectederror: false,
+			name:   "valid location",
+			status: http.StatusOK,
+			body:   `{"display_name":"New York, United States"}`,
 		},
 		{
-			name:          "empty long and lats",
-			latitude:      0.0,
-			longitude:     0.0,
-			expectederror: true,
-		}, {
-			name:          "gibberish and invalid input",
-			latitude:      3433434.34343434,
-			longitude:     -123213123123.12321,
-			expectederror: true,
+			name:        "provider error",
+			status:      http.StatusServiceUnavailable,
+			body:        `service unavailable`,
+			expectError: true,
+		},
+		{
+			name:        "malformed payload",
+			status:      http.StatusOK,
+			body:        `{`,
+			expectError: true,
+		},
+		{
+			name:        "missing display name",
+			status:      http.StatusOK,
+			body:        `{}`,
+			expectError: true,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			locationname, err := ReverseGeocoding(tt.latitude, tt.longitude)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "40.7128", r.URL.Query().Get("lat"))
+				assert.Equal(t, "-74.006", r.URL.Query().Get("lon"))
+				assert.Equal(t, "json", r.URL.Query().Get("format"))
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(test.body))
+			}))
+			defer server.Close()
 
-			if tt.expectederror {
-				assert.Error(t, err, "expected an error but got nil")
-				assert.Empty(t, locationname, "expected emtpy location when there was error")
-			} else {
-				assert.NoError(t, err, "expected no error but got : %v", err)
-				assert.NotNil(t, locationname, "expected a location string but got nil")
+			location, err := reverseGeocoding(context.Background(), server.Client(), server.URL, 40.7128, -74.006)
+			if test.expectError {
+				assert.Error(t, err)
+				assert.Empty(t, location)
+				return
 			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, "New York, United States", location)
 		})
 	}
+}
+
+func TestReverseGeocodingRejectsInvalidCoordinates(t *testing.T) {
+	location, err := reverseGeocoding(context.Background(), http.DefaultClient, "http://unused.test", 91, -74.006)
+
+	assert.Error(t, err)
+	assert.Empty(t, location)
+}
+
+func TestReverseGeocodingTimesOut(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(time.Second):
+		case <-r.Context().Done():
+		}
+	}))
+	defer server.Close()
+
+	client := &http.Client{Timeout: 20 * time.Millisecond}
+	location, err := reverseGeocoding(context.Background(), client, server.URL, 40.7128, -74.006)
+
+	assert.Error(t, err)
+	assert.Empty(t, location)
 }
