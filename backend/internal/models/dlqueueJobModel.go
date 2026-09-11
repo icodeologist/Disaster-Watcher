@@ -4,6 +4,7 @@ import "time"
 
 type DLQJob struct {
 	ID             int64     `json:"id"`
+	DeliveryID     uint      `json:"delivery_id" gorm:"index"`
 	ErrorMessage   string    `json:"error_message"`
 	FailedMsgJOBID int64     `json:"job_id"`
 	CreatedAt      time.Time `json:"created_at"`
