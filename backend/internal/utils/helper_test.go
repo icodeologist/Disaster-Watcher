@@ -1,14 +1,14 @@
-// test for cachedCoora function
 package utils
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	"github.com/icodeologist/disasterwatch/internal/models"
 	"github.com/stretchr/testify/assert"
 )
 
-// Helper function to easily create pointers to floats for our test table
 func floatPtr(f float64) *float64 {
 	return &f
 }
@@ -17,58 +17,67 @@ func TestCachedUserCords(t *testing.T) {
 	tests := []struct {
 		name         string
 		user         *models.User
+		geocode      func(context.Context, string) (*models.Location, error)
 		expectError  bool
-		expectCached bool // What we expect LocationCached to be AFTER the function runs
+		expectCached bool
+		expectCalls  int
 	}{
 		{
-			name: "Already cached (Early Exit)",
+			name: "already cached skips geocoding",
 			user: &models.User{
 				Location:       "Tokyo",
 				LocationCached: true,
 				CachedLat:      floatPtr(35.6895),
 				CachedLong:     floatPtr(139.6917),
 			},
-			expectError:  false,
+			geocode: func(context.Context, string) (*models.Location, error) {
+				return nil, fmt.Errorf("geocoder should not be called")
+			},
 			expectCached: true,
 		},
 		{
-			name: "Not cached, Valid Location",
-			user: &models.User{
-				Location: "London", // We know this works from our last test!
+			name: "successful geocoding caches coordinates",
+			user: &models.User{Location: "London"},
+			geocode: func(context.Context, string) (*models.Location, error) {
+				return &models.Location{Lat: 51.5072, Long: -0.1276}, nil
 			},
-			expectError:  false,
-			expectCached: true, // The function should set this to true
+			expectCached: true,
+			expectCalls:  1,
 		},
 		{
-			name: "Not cached, Invalid Location",
-			user: &models.User{
-				Location: "", // We know this triggers an error
+			name: "geocoding failure leaves coordinates uncached",
+			user: &models.User{Location: ""},
+			geocode: func(context.Context, string) (*models.Location, error) {
+				return nil, fmt.Errorf("location cannot be empty")
 			},
-			expectError:  true,
-			expectCached: false, // Should remain false because it failed
+			expectError: true,
+			expectCalls: 1,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			calls := 0
+			lookup := func(ctx context.Context, location string) (*models.Location, error) {
+				calls++
+				return test.geocode(ctx, location)
+			}
 
-			// Call the function
-			err := CachedUserCords(tt.user)
-
-			// 1. Check the error
-			if tt.expectError {
+			err := cachedUserCords(context.Background(), test.user, lookup)
+			if test.expectError {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
 			}
+			assert.Equal(t, test.expectCached, test.user.LocationCached)
+			assert.Equal(t, test.expectCalls, calls)
 
-			// 2. Check if the caching state was updated correctly
-			assert.Equal(t, tt.expectCached, tt.user.LocationCached, "LocationCached boolean mismatch")
-
-			// 3. If it was supposed to be cached, ensure the pointers aren't nil
-			if tt.expectCached {
-				assert.NotNil(t, tt.user.CachedLat, "CachedLat should not be nil")
-				assert.NotNil(t, tt.user.CachedLong, "CachedLong should not be nil")
+			if test.expectCached {
+				assert.NotNil(t, test.user.CachedLat)
+				assert.NotNil(t, test.user.CachedLong)
+			} else {
+				assert.Nil(t, test.user.CachedLat)
+				assert.Nil(t, test.user.CachedLong)
 			}
 		})
 	}
