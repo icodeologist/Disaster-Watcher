@@ -7,6 +7,8 @@ type EmailBody struct {
 }
 
 type EmailModel struct {
-	Email     string
-	EmailBody EmailBody
+	ID             uint      `gorm:"primaryKey"`
+	IdempotencyKey string    `gorm:"uniqueIndex;not null;size:255"`
+	Email          string    `gorm:"not null;size:320"`
+	EmailBody      EmailBody `gorm:"embedded;embeddedPrefix:body_"`
 }
