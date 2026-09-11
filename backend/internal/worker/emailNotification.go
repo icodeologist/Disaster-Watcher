@@ -34,6 +34,7 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 			}()
 			// first time sending email
 			processSendingEmail := func(affUserMsg models.AffectedUsersMessage) {
+				// so its first time just update the processed notifcation with this affMsg
 				claim := db.DB.Model(&models.ProcessedNotification{}).
 					Where("id = ? AND job_id = ? AND user_id = ? AND status = ?", affUserMsg.DeliveryID, affUserMsg.JobID, affUserMsg.UserID, "pending").
 					Updates(map[string]interface{}{"status": "processing", "attempts": 1})
@@ -41,6 +42,7 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 					slog.Error("Failed to claim notification delivery", "delivery_id", affUserMsg.DeliveryID, "error", claim.Error)
 					return
 				}
+				// if 2 workers comes and worker 1 already claimed using all the infor above and updated it to processing then second worker Worker B gets RowsAffected == 0 and its already claimed message
 				if claim.RowsAffected == 0 {
 					slog.Info("Notification delivery already claimed", "delivery_id", affUserMsg.DeliveryID)
 					return
@@ -50,8 +52,10 @@ func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n 
 				if err := db.DB.Where("id=?", affUserMsg.UserID).First(&user).Error; err != nil {
 					slog.Error("failed to fetch user from db", "user_id", affUserMsg.UserID, "error", err)
 					now := time.Now()
-					db.DB.Model(&models.ProcessedNotification{}).Where("id = ?", affUserMsg.DeliveryID).Updates(map[string]interface{}{
-						"status": "failed", "failed_at": &now, "last_error": err.Error(),
+					db.DB.Model(&models.ProcessedNotification{}).Where("id=?", affUserMsg.DeliveryID).Updates(map[string]any{
+						"status":     "failed",
+						"failed_at":  &now,
+						"last_error": err.Error(),
 					})
 					if finalizeErr := finalizeNotificationJob(affUserMsg.JobID); finalizeErr != nil {
 						slog.Error("Failed to finalize notification job", "job_id", affUserMsg.JobID, "error", finalizeErr)
