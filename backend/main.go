@@ -79,6 +79,13 @@ func main() {
 	worker.StartExtractWorkers(workContext, &wg, 5, reportsChannel, deliveryChannel)
 	worker.StartNotificationWorker(workContext, &wg, 5, deliveryChannel, retryDeliveryChannel)
 	worker.StartFailedEmailSendingWorker(workContext, &wg, 5, maxRetries, retryDeliveryChannel, deadLetterChannel)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := utils.RecoverNotificationDeliveries(workContext, deliveryChannel, retryDeliveryChannel, 10*time.Minute); err != nil && workContext.Err() == nil {
+			slog.Error("Failed to recover notification deliveries", "error", err)
+		}
+	}()
 
 	// rate limiting middleware
 	ratelimitMiddleware := auth.NewRateLimiterMiddleware(10, 5)
