@@ -17,7 +17,7 @@ type deliveryStatusCounts struct {
 
 func finalizeNotificationJob(jobID int64) error {
 	var counts deliveryStatusCounts
-	err := db.DB.Model(&models.ProcessedNotification{}).
+	err := db.DB.Model(&models.NotificationDelivery{}).
 		Select(`COUNT(*) AS total,
 			SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successful,
 			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,

@@ -48,7 +48,7 @@ func NearByTrustedUsers(nearbyUserIDS []uint) ([]uint, error) {
 }
 
 // Users in the distance from the report posted in  radius like 20km?
-func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUsers []models.User, reportChan <-chan models.ReportMessage, affectedUserIdsChan chan<- models.AffectedUsersMessage) {
+func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUsers []models.User, reportChan <-chan models.ReportMessage, deliveryChannel chan<- models.NotificationDeliveryMessage) {
 	defer wg.Done()
 	defer func() {
 		if r := recover(); r != nil {
@@ -65,7 +65,7 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 	// wg.WAIT() in main unblocks and we shutdown
 	//
 	processReport := func(reportMsg models.ReportMessage) {
-		var affectedUsers []models.AffectedUsersMessage
+		var deliveries []models.NotificationDelivery
 		for _, user := range allUsers {
 			report := reportMsg.Report
 			userLat := user.CachedLat
@@ -76,33 +76,34 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 			}
 			radius := Haversine(*report.CachedLat, *report.CachedLong, *userLat, *userLong)
 			if radius <= 20 {
-				affectedUsers = append(affectedUsers, models.AffectedUsersMessage{
-					JobID:  reportMsg.JobID,
-					UserID: user.ID,
-					Report: report,
+				deliveries = append(deliveries, models.NotificationDelivery{
+					IdempotencyKey: fmt.Sprintf("disaster-email/%d/%d", reportMsg.JobID, user.ID),
+					JobID:          reportMsg.JobID,
+					UserID:         user.ID,
+					RecipientEmail: user.Email,
+					EmailBody: models.EmailBody{
+						Title:      report.Title,
+						Location:   report.Location,
+						Precaution: "Please take care of yourself and stay alert. Call the emergency helpline if you need assistance.",
+					},
+					Status: models.DeliveryStatusPending,
 				})
 			}
 		}
 
-		if len(affectedUsers) == 0 {
+		if len(deliveries) == 0 {
 			if err := db.DB.Model(&models.Jobs{}).Where("id = ?", reportMsg.JobID).Update("status", "done").Error; err != nil {
 				slog.Error("Failed to finish job with no affected users", "job_id", reportMsg.JobID, "error", err)
 			}
 			return
 		}
-
+		// The complete delivery is committed before its ID is published. If the
+		// process stops before publishing, startup recovery can find the pending row.
 		err := db.DB.Transaction(func(tx *gorm.DB) error {
-			for i := range affectedUsers {
-				delivery := models.ProcessedNotification{
-					IdempotencyKey: fmt.Sprintf("%d+%d", affectedUsers[i].UserID, reportMsg.JobID),
-					JobID:          reportMsg.JobID,
-					UserID:         affectedUsers[i].UserID,
-					Status:         "pending",
-				}
-				if err := tx.Create(&delivery).Error; err != nil {
+			for i := range deliveries {
+				if err := tx.Create(&deliveries[i]).Error; err != nil {
 					return err
 				}
-				affectedUsers[i].DeliveryID = delivery.ID
 			}
 			return tx.Model(&models.Jobs{}).Where("id = ?", reportMsg.JobID).Update("status", "processing").Error
 		})
@@ -111,9 +112,9 @@ func GetUsersAffectedByDisaster(ctx context.Context, wg *sync.WaitGroup, allUser
 			return
 		}
 
-		for _, affectedUser := range affectedUsers {
+		for _, delivery := range deliveries {
 			select {
-			case affectedUserIdsChan <- affectedUser:
+			case deliveryChannel <- models.NotificationDeliveryMessage{DeliveryID: delivery.ID}:
 			case <-ctx.Done():
 				return
 			}

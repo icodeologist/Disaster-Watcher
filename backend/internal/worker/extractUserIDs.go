@@ -17,7 +17,7 @@ import (
 // Once we get all affected users job status is updated from pending to processing
 
 // Get the users effected from the disasters and push their id to affuserchannel
-func StartExtractWorkers(rootContext context.Context, wg *sync.WaitGroup, n int, reportChannel <-chan models.ReportMessage, affUserIDChannel chan<- models.AffectedUsersMessage) {
+func StartExtractWorkers(rootContext context.Context, wg *sync.WaitGroup, n int, reportChannel <-chan models.ReportMessage, deliveryChannel chan<- models.NotificationDeliveryMessage) {
 	// start n of workers
 	slog.Info("EXTRACTUSERS WORKERS STARTED", "COUNT", n)
 
@@ -28,6 +28,6 @@ func StartExtractWorkers(rootContext context.Context, wg *sync.WaitGroup, n int,
 	}
 	for i := 0; i < n; i++ {
 		wg.Add(1)
-		go utils.GetUsersAffectedByDisaster(rootContext, wg, allUsers, reportChannel, affUserIDChannel)
+		go utils.GetUsersAffectedByDisaster(rootContext, wg, allUsers, reportChannel, deliveryChannel)
 	}
 }

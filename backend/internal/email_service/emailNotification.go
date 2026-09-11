@@ -1,33 +1,38 @@
 package emailservice
 
 import (
-	"fmt"
+	"context"
+	"errors"
 	"log/slog"
-	"net/smtp"
-
-	"github.com/icodeologist/disasterwatch/internal/models"
+	"math/rand/v2"
 )
 
-func SendEmail(emailObj models.EmailModel) error {
-	smtpHost := "sandbox.smtp.mailtrap.io"
-	smtpPort := "587"
-	username := "80a92df47b164b"
-	password := "f90eac08470a7a" // replace with your full password
-	sender := "DisasterNotifierTeam@example.com"
-	rc := []string{emailObj.Email}
+// SendRequest contains only the values an email provider needs.
+type SendRequest struct {
+	IdempotencyKey string
+	To             string
+	Title          string
+	Location       string
+	Precaution     string
+}
 
-	subject := "Subject: Disaster happened nearby!\r\n"
-	body := fmt.Sprintf("Report : %v was posted near Location : %v . Please Follow our precaution : %v", emailObj.EmailBody.Title, emailObj.EmailBody.Location, emailObj.EmailBody.Precaution)
-	message := []byte(subject + "\r\n" + body)
-
-	auth := smtp.PlainAuth("", username, password, smtpHost)
-
-	err := smtp.SendMail(smtpHost+":"+smtpPort, auth, sender, rc, message)
-	if err != nil {
-		slog.Error("Smtp message SENDEMAIL error", "error", err)
+func SendEmail(ctx context.Context, request SendRequest) error {
+	// now we pass this to provider and it should handle the rest
+	// if it has already seen this give us the same response exit from here
+	// if not just actually send the email
+	if err := ctx.Err(); err != nil {
 		return err
-	} else {
-		slog.Info("Message sent to user @", emailObj.Email, " Successfully.")
-		return nil
 	}
+	if request.IdempotencyKey == "" {
+		return errors.New("missing email idempotency key")
+	}
+	if request.To == "" {
+		return errors.New("missing email recipient")
+	}
+	if rand.IntN(2) == 0 {
+		return errors.New("simulated email delivery failure")
+	}
+
+	slog.Info("Simulated email sent successfully", "email", request.To)
+	return nil
 }

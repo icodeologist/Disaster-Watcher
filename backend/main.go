@@ -40,10 +40,10 @@ func main() {
 
 	// Creating buffered channels for my worker pool
 	reportsChannel := make(chan models.ReportMessage, 10)
-	failedEmailsChan := make(chan models.FailedEmailMessage, 10)
+	retryDeliveryChannel := make(chan models.NotificationDeliveryMessage, 10)
 	// If some message failed after retry put them here and later let admin check through it
 	deadLetterChannel := make(chan models.DLQJob, 1000)
-	affectedUsersIDChannel := make(chan models.AffectedUsersMessage, 10)
+	deliveryChannel := make(chan models.NotificationDeliveryMessage, 10)
 	verficationMessageChannel := make(chan models.VerificationMessage, 10)
 	//retry for failed message
 	maxRetries := 5
@@ -67,7 +67,7 @@ func main() {
 	// Putting all dependencies required for workers in workerServer
 	workerServer := &handler.Server{
 		ReportChannel:          reportsChannel,
-		AffectedUsersIdChannel: affectedUsersIDChannel,
+		AffectedUsersIdChannel: deliveryChannel,
 		VerificationChannel:    verficationMessageChannel,
 	}
 
@@ -76,9 +76,9 @@ func main() {
 
 	// starting all workers
 	worker.StartVerificationWorkers(workContext, &wg, 5, verficationMessageChannel, reportsChannel)
-	worker.StartExtractWorkers(workContext, &wg, 5, reportsChannel, affectedUsersIDChannel)
-	worker.StartNotificationWorker(workContext, &wg, 5, affectedUsersIDChannel, failedEmailsChan)
-	worker.StartFailedEmailSendingWorker(workContext, &wg, 5, maxRetries, failedEmailsChan, deadLetterChannel)
+	worker.StartExtractWorkers(workContext, &wg, 5, reportsChannel, deliveryChannel)
+	worker.StartNotificationWorker(workContext, &wg, 5, deliveryChannel, retryDeliveryChannel)
+	worker.StartFailedEmailSendingWorker(workContext, &wg, 5, maxRetries, retryDeliveryChannel, deadLetterChannel)
 
 	// rate limiting middleware
 	ratelimitMiddleware := auth.NewRateLimiterMiddleware(10, 5)

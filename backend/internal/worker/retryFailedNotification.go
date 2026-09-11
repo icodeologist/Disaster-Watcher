@@ -11,143 +11,178 @@ import (
 	"github.com/icodeologist/disasterwatch/internal/db"
 	emailservice "github.com/icodeologist/disasterwatch/internal/email_service"
 	"github.com/icodeologist/disasterwatch/internal/models"
+	"gorm.io/gorm"
 )
 
-// if afected user email sending failed and you are in failedEmailsChan its retry time
-// retry is 5 right now
-// retry uses exponential backoff timings
-// you failed here too after all that retry
-// you will be pushed to dlq
-// and admin will review you
+func retryDelay(attempts int) time.Duration {
+	return time.Duration(math.Pow(2, float64(attempts))) * time.Second
+}
 
-func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGroup, n int, maxTries int, failedEmailsChan chan models.FailedEmailMessage, deadMessageChannel chan models.DLQJob) {
-	slog.Info("FAILED EMAIL WORKERS STARTED", "COUNT", n)
-	for i := 0; i < n; i++ {
+func waitUntil(ctx context.Context, when *time.Time) error {
+	if when == nil || !when.After(time.Now()) {
+		return nil
+	}
+	timer := time.NewTimer(time.Until(*when))
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGroup, workerCount int, maxRetries int, retryChannel <-chan models.NotificationDeliveryMessage, deadMessageChannel chan models.DLQJob) {
+	slog.Info("FAILED EMAIL WORKERS STARTED", "COUNT", workerCount)
+	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			//recover if this go routiner panicks at some point
 			defer func() {
-				if r := recover(); r != nil {
-					slog.Error("Recoverd panic in StartFailedEmailSendingWorker", "Panic", r)
+				if recovered := recover(); recovered != nil {
+					slog.Error("Recovered panic in failed email worker", "worker_id", id, "panic", recovered)
 				}
 			}()
-			processFailedEmailSending := func(failedUserID models.FailedEmailMessage) {
-				// 2 4 8 16 64
-				attempt := failedUserID.RetryAttempt
-				if attempt == 0 {
-					attempt = 1
-				}
-				timeTOwait := math.Pow(2, float64(attempt))
-				fMsg := &models.FailedEmailMessage{
-					DeliveryID:   failedUserID.DeliveryID,
-					JobID:        failedUserID.JobID,
-					User:         failedUserID.User,
-					Report:       failedUserID.Report,
-					ErrorMessage: failedUserID.ErrorMessage,
-					RetryAttempt: failedUserID.RetryAttempt + 1,
-					RetryDelay:   time.Duration(timeTOwait) * time.Second,
-				}
-				if fMsg.RetryAttempt <= maxTries {
-					select {
-					case <-time.After(time.Duration(timeTOwait) * time.Second):
-					case <-rootContext.Done():
-						slog.Info("shutdown fired, stopping workers")
+
+			processRetry := func(message models.NotificationDeliveryMessage) {
+				for {
+					delivery, err := loadNotificationDelivery(message.DeliveryID)
+					if err != nil {
+						slog.Error("Failed to load notification delivery for retry", "delivery_id", message.DeliveryID, "error", err)
 						return
 					}
-					slog.Info("Retrying", "User", fMsg.User.ID, "Retry time", fMsg.RetryAttempt, "Retrying again in", fMsg.RetryDelay)
-					emailObj := models.EmailBody{
-						Title:      fMsg.Report.Title,
-						Location:   fMsg.Report.Location,
-						Precaution: "Please take care of you and watch out. Call this help line 3939393.",
-					}
-					emailHelper := models.EmailModel{
-						Email:     fMsg.User.Email,
-						EmailBody: emailObj,
+
+					if delivery.Attempts > maxRetries {
+						moveDeliveryToDLQ(rootContext, delivery, deadMessageChannel)
+						return
 					}
 
-					claim := db.DB.Model(&models.ProcessedNotification{}).
-						Where("id = ? AND job_id = ? AND user_id = ? AND status = ?", fMsg.DeliveryID, fMsg.JobID, fMsg.User.ID, "retrying").
-						Updates(map[string]interface{}{"status": "processing", "attempts": fMsg.RetryAttempt + 1})
+					if err := waitUntil(rootContext, delivery.NextAttemptAt); err != nil {
+						return
+					}
+
+					nextAttemptNumber := delivery.Attempts + 1
+					processingStartedAt := time.Now()
+					claim := db.DB.Model(&models.NotificationDelivery{}).
+						Where("id = ? AND status = ? AND attempts = ?", delivery.ID, models.DeliveryStatusRetrying, delivery.Attempts).
+						Updates(map[string]any{
+							"status":                models.DeliveryStatusProcessing,
+							"attempts":              nextAttemptNumber,
+							"processing_started_at": &processingStartedAt,
+							"next_attempt_at":       nil,
+						})
 					if claim.Error != nil {
-						slog.Error("Failed to claim notification retry", "delivery_id", fMsg.DeliveryID, "error", claim.Error)
+						slog.Error("Failed to claim notification retry", "delivery_id", delivery.ID, "error", claim.Error)
 						return
 					}
 					if claim.RowsAffected == 0 {
-						slog.Info("Notification retry already claimed or completed", "delivery_id", fMsg.DeliveryID)
+						slog.Info("Notification retry already claimed or outdated", "delivery_id", delivery.ID)
 						return
 					}
 
-					err := emailservice.SendEmail(emailHelper)
-					if err != nil {
-						if updateErr := db.DB.Model(&models.ProcessedNotification{}).Where("id = ?", fMsg.DeliveryID).Updates(map[string]interface{}{
-							"status": "retrying", "last_error": err.Error(),
-						}).Error; updateErr != nil {
-							slog.Error("Failed to update notification retry", "delivery_id", fMsg.DeliveryID, "error", updateErr)
+					slog.Info("Retrying email", "delivery_id", delivery.ID, "user_id", delivery.UserID, "attempt", nextAttemptNumber)
+					sendErr := emailservice.SendEmail(rootContext, sendRequestFromDelivery(delivery))
+					if sendErr != nil {
+						nextAttemptAt := time.Now().Add(retryDelay(nextAttemptNumber))
+						result := db.DB.Model(&models.NotificationDelivery{}).
+							Where("id = ? AND status = ? AND attempts = ?", delivery.ID, models.DeliveryStatusProcessing, nextAttemptNumber).
+							Updates(map[string]any{
+								"status":                models.DeliveryStatusRetrying,
+								"last_error":            sendErr.Error(),
+								"next_attempt_at":       &nextAttemptAt,
+								"processing_started_at": nil,
+							})
+						if result.Error != nil {
+							slog.Error("Failed to record notification retry failure", "delivery_id", delivery.ID, "error", result.Error)
 							return
 						}
-						select {
-						case failedEmailsChan <- *fMsg:
-						case <-rootContext.Done():
+						if result.RowsAffected == 0 {
 							return
 						}
-					} else {
-						slog.Info("email sent successfully", "User", fMsg.User.ID, "attempt", fMsg.RetryAttempt)
-						now := time.Now()
-						if err := db.DB.Model(&models.ProcessedNotification{}).Where("id = ?", fMsg.DeliveryID).Updates(map[string]interface{}{
-							"status": "success", "sent_at": &now, "last_error": "",
-						}).Error; err != nil {
-							slog.Error("Failed to mark notification retry successful", "delivery_id", fMsg.DeliveryID, "error", err)
-							return
-						}
-						if err := finalizeNotificationJob(fMsg.JobID); err != nil {
-							slog.Error("Failed to finalize notification job", "job_id", fMsg.JobID, "error", err)
-						}
-					}
-				} else {
-					now := time.Now()
-					if err := db.DB.Model(&models.ProcessedNotification{}).Where("id = ? AND status <> ?", fMsg.DeliveryID, "success").Updates(map[string]interface{}{
-						"status": "failed", "failed_at": &now, "last_error": fmt.Sprint(fMsg.ErrorMessage),
-					}).Error; err != nil {
-						slog.Error("Failed to mark notification delivery failed", "delivery_id", fMsg.DeliveryID, "error", err)
-						return
-					}
-					if err := finalizeNotificationJob(fMsg.JobID); err != nil {
-						slog.Error("Failed to finalize notification job", "job_id", fMsg.JobID, "error", err)
-					}
-					dlqJob := models.DLQJob{
-						ErrorMessage:   fmt.Sprintf("ERR_MAX_RETRY_EXHAUSTER : %v", fMsg.ErrorMessage),
-						FailedMsgJOBID: fMsg.JobID,
-						CreatedAt:      time.Now(),
-						WhereFailed:    "FailedEmailSendingWorker",
-					}
-					if err := db.DB.Save(&dlqJob).Error; err != nil {
-						slog.Error("Error saving dlqjob to DB", "err", err)
-						return
+						continue
 					}
 
-					select {
-					// if faile after maxtries  == retry attempts
-					// push to DL
-					// and save the job
-					case deadMessageChannel <- dlqJob:
-						slog.Warn("Notification Failed, Sending to DeadLetterChannel", "User", fMsg.User.ID, "RetryLeft", maxTries-fMsg.RetryAttempt)
-					case <-rootContext.Done():
+					sentAt := time.Now()
+					result := db.DB.Model(&models.NotificationDelivery{}).
+						Where("id = ? AND status = ? AND attempts = ?", delivery.ID, models.DeliveryStatusProcessing, nextAttemptNumber).
+						Updates(map[string]any{
+							"status":                models.DeliveryStatusSuccess,
+							"sent_at":               &sentAt,
+							"last_error":            "",
+							"processing_started_at": nil,
+						})
+					if result.Error != nil {
+						slog.Error("Failed to mark notification retry successful", "delivery_id", delivery.ID, "error", result.Error)
 						return
 					}
+					if result.RowsAffected == 0 {
+						slog.Warn("Delivery state changed before retry success was recorded", "delivery_id", delivery.ID)
+						return
+					}
+					if err := finalizeNotificationJob(delivery.JobID); err != nil {
+						slog.Error("Failed to finalize notification job", "job_id", delivery.JobID, "error", err)
+					}
+					return
 				}
 			}
+
 			for {
 				select {
 				case <-rootContext.Done():
 					return
-				case failedUserID, ok := <-failedEmailsChan:
+				case message, ok := <-retryChannel:
 					if !ok {
 						return
 					}
-					processFailedEmailSending(failedUserID)
+					processRetry(message)
 				}
 			}
 		}(i)
+	}
+}
+
+func moveDeliveryToDLQ(ctx context.Context, delivery models.NotificationDelivery, deadMessageChannel chan<- models.DLQJob) {
+	failedAt := time.Now()
+	dlqJob := models.DLQJob{
+		DeliveryID:     delivery.ID,
+		FailedMsgJOBID: delivery.JobID,
+		ErrorMessage:   fmt.Sprintf("ERR_MAX_RETRY_EXHAUSTED: %s", delivery.LastError),
+		CreatedAt:      time.Now(),
+		WhereFailed:    "FailedEmailSendingWorker",
+	}
+	moved := false
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.NotificationDelivery{}).
+			Where("id = ? AND status = ? AND attempts = ?", delivery.ID, models.DeliveryStatusRetrying, delivery.Attempts).
+			Updates(map[string]any{
+				"status":          models.DeliveryStatusFailed,
+				"failed_at":       &failedAt,
+				"next_attempt_at": nil,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		if err := tx.Create(&dlqJob).Error; err != nil {
+			return err
+		}
+		moved = true
+		return nil
+	}); err != nil {
+		slog.Error("Failed to move notification delivery to DLQ", "delivery_id", delivery.ID, "error", err)
+		return
+	}
+	if !moved {
+		return
+	}
+	if err := finalizeNotificationJob(delivery.JobID); err != nil {
+		slog.Error("Failed to finalize notification job", "job_id", delivery.JobID, "error", err)
+	}
+
+	select {
+	case deadMessageChannel <- dlqJob:
+	case <-ctx.Done():
 	}
 }

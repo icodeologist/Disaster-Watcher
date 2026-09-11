@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -16,138 +17,128 @@ type EmailrateLimiter struct {
 	limiter *rate.Limiter
 }
 
-// Third step.
-// For each affected users send email using rate limiter
-// if failed using the ProcessedNotification col update error and push to failedEmailsChan
-// if passed update ProcessedNotification staus and wait for all of them to finish
-// once finished items will finalizeNotificationJob to determine the overall status of the job
-
-func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, n int, affUsersIdChannel <-chan models.AffectedUsersMessage, failedEmailsChan chan<- models.FailedEmailMessage) {
-	slog.Info("NOTIFICATION WORKERS STARTED", "COUNT", n)
-	emailRateL := &EmailrateLimiter{
-		limiter: rate.NewLimiter(2, 3),
+func loadNotificationDelivery(deliveryID uint) (models.NotificationDelivery, error) {
+	var delivery models.NotificationDelivery
+	if err := db.DB.First(&delivery, deliveryID).Error; err != nil {
+		return models.NotificationDelivery{}, fmt.Errorf("load notification delivery %d: %w", deliveryID, err)
 	}
+	return delivery, nil
+}
 
-	for i := 0; i < n; i++ {
+func sendRequestFromDelivery(delivery models.NotificationDelivery) emailservice.SendRequest {
+	return emailservice.SendRequest{
+		IdempotencyKey: delivery.IdempotencyKey,
+		To:             delivery.RecipientEmail,
+		Title:          delivery.EmailBody.Title,
+		Location:       delivery.EmailBody.Location,
+		Precaution:     delivery.EmailBody.Precaution,
+	}
+}
+
+func StartNotificationWorker(rootContext context.Context, wg *sync.WaitGroup, workerCount int, deliveryChannel <-chan models.NotificationDeliveryMessage, retryChannel chan<- models.NotificationDeliveryMessage) {
+	slog.Info("NOTIFICATION WORKERS STARTED", "COUNT", workerCount)
+	emailRateLimiter := &EmailrateLimiter{limiter: rate.NewLimiter(2, 3)}
+
+	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			//recover if this go routiner panicks at some point
 			defer func() {
-				if r := recover(); r != nil {
-					slog.Error("Recovered panic in Notification Workers", "panic", r)
+				if recovered := recover(); recovered != nil {
+					slog.Error("Recovered panic in notification worker", "worker_id", id, "panic", recovered)
 				}
 			}()
-			// first time sending email
-			processSendingEmail := func(affUserMsg models.AffectedUsersMessage) {
-				// so its first time just update the processed notifcation with this affMsg
-				claim := db.DB.Model(&models.ProcessedNotification{}).
-					Where("id = ? AND job_id = ? AND user_id = ? AND status = ?", affUserMsg.DeliveryID, affUserMsg.JobID, affUserMsg.UserID, "pending").
-					Updates(map[string]interface{}{"status": "processing", "attempts": 1})
-				if claim.Error != nil {
-					slog.Error("Failed to claim notification delivery", "delivery_id", affUserMsg.DeliveryID, "error", claim.Error)
-					return
-				}
-				// if 2 workers comes and worker 1 already claimed using all the infor above and updated it to processing then second worker Worker B gets RowsAffected == 0 and its already claimed message
-				if claim.RowsAffected == 0 {
-					slog.Info("Notification delivery already claimed", "delivery_id", affUserMsg.DeliveryID)
-					return
-				}
 
-				var user models.User
-				if err := db.DB.Where("id=?", affUserMsg.UserID).First(&user).Error; err != nil {
-					slog.Error("failed to fetch user from db", "user_id", affUserMsg.UserID, "error", err)
-					now := time.Now()
-					db.DB.Model(&models.ProcessedNotification{}).Where("id=?", affUserMsg.DeliveryID).Updates(map[string]any{
-						"status":     "failed",
-						"failed_at":  &now,
-						"last_error": err.Error(),
-					})
-					if finalizeErr := finalizeNotificationJob(affUserMsg.JobID); finalizeErr != nil {
-						slog.Error("Failed to finalize notification job", "job_id", affUserMsg.JobID, "error", finalizeErr)
-					}
-					return
-				}
-				if err := emailRateL.limiter.Wait(rootContext); err != nil {
-					slog.Warn("email rate limiter wait interrupted", "error", err)
-					db.DB.Model(&models.ProcessedNotification{}).Where("id = ?", affUserMsg.DeliveryID).Update("status", "pending")
-					return
-				}
-				slog.Info("Email Sending", "User", affUserMsg.UserID, "Tries", "First Time")
-				emailObj := models.EmailBody{
-					Title:      affUserMsg.Report.Title,
-					Location:   affUserMsg.Report.Location,
-					Precaution: "Please take care of you and watch out. Call this help line 3939393.",
-				}
-				var pn models.ProcessedNotification
-				err := db.DB.Where("id=?", affUserMsg.DeliveryID).First(&pn).Error
+			processDelivery := func(message models.NotificationDeliveryMessage) {
+				delivery, err := loadNotificationDelivery(message.DeliveryID)
 				if err != nil {
-					slog.Error("processed notification fetch failed", "error", err)
+					slog.Error("Failed to load notification delivery", "delivery_id", message.DeliveryID, "error", err)
 					return
 				}
 
-				emailHelper := models.EmailModel{
-					IdempotencyKey: pn.IdempotencyKey,
-					Email:          user.Email,
-					EmailBody:      emailObj,
-				}
-				saveErr := db.DB.Save(&emailHelper).Error
-				if saveErr != nil {
-					slog.Error("save email helper failed", "error", saveErr)
-					return
-				}
-				sendEmailErr := emailservice.SendEmail(emailHelper)
-				if sendEmailErr != nil {
-					slog.Warn("Failed to send Email", "User", affUserMsg.UserID)
-					if updateErr := db.DB.Model(&models.ProcessedNotification{}).Where("id = ?", affUserMsg.DeliveryID).Updates(map[string]interface{}{
-						"status": "retrying", "last_error": sendEmailErr.Error(),
-					}).Error; updateErr != nil {
-						slog.Error("Failed to update notification delivery", "delivery_id", affUserMsg.DeliveryID, "error", updateErr)
-						return
-					}
-					failedMessage := &models.FailedEmailMessage{
-						DeliveryID:   affUserMsg.DeliveryID,
-						JobID:        affUserMsg.JobID,
-						User:         user,
-						Report:       affUserMsg.Report,
-						ErrorMessage: sendEmailErr,
-						RetryAttempt: 0,
-					}
-					// same logic
-					// if shutdown fired and worker wait to send
-					// drop it assuming downline workers already left
-					select {
-					case failedEmailsChan <- *failedMessage:
-						slog.Info("Push failed email to FailedMessageChannel", "User", affUserMsg.UserID)
-					case <-rootContext.Done():
-						slog.Info("shutdown fired, stopping workers")
-						return
-					}
+				// Waiting before the claim means shutdown cannot strand the row in processing.
+				if err := emailRateLimiter.limiter.Wait(rootContext); err != nil {
+					slog.Warn("Email rate limiter wait interrupted", "delivery_id", delivery.ID, "error", err)
 					return
 				}
 
 				now := time.Now()
-				if err := db.DB.Model(&models.ProcessedNotification{}).Where("id = ?", affUserMsg.DeliveryID).Updates(map[string]interface{}{
-					"status": "success", "sent_at": &now, "last_error": "",
-				}).Error; err != nil {
-					slog.Error("Failed to mark notification delivery successful", "delivery_id", affUserMsg.DeliveryID, "error", err)
+				claim := db.DB.Model(&models.NotificationDelivery{}).
+					Where("id = ? AND status = ?", delivery.ID, models.DeliveryStatusPending).
+					Updates(map[string]any{
+						"status":                models.DeliveryStatusProcessing,
+						"attempts":              1,
+						"processing_started_at": &now,
+						"next_attempt_at":       nil,
+					})
+				if claim.Error != nil {
+					slog.Error("Failed to claim notification delivery", "delivery_id", delivery.ID, "error", claim.Error)
 					return
 				}
-				if err := finalizeNotificationJob(affUserMsg.JobID); err != nil {
-					slog.Error("Failed to finalize notification job", "job_id", affUserMsg.JobID, "error", err)
+				if claim.RowsAffected == 0 {
+					slog.Info("Notification delivery already claimed", "delivery_id", delivery.ID)
+					return
+				}
+
+				slog.Info("Sending email", "delivery_id", delivery.ID, "user_id", delivery.UserID, "attempt", 1)
+				sendErr := emailservice.SendEmail(rootContext, sendRequestFromDelivery(delivery))
+				if sendErr != nil {
+					nextAttempt := time.Now().Add(retryDelay(1))
+					result := db.DB.Model(&models.NotificationDelivery{}).
+						Where("id = ? AND status = ?", delivery.ID, models.DeliveryStatusProcessing).
+						Updates(map[string]any{
+							"status":                models.DeliveryStatusRetrying,
+							"last_error":            sendErr.Error(),
+							"next_attempt_at":       &nextAttempt,
+							"processing_started_at": nil,
+						})
+					if result.Error != nil {
+						slog.Error("Failed to record email failure", "delivery_id", delivery.ID, "error", result.Error)
+						return
+					}
+					if result.RowsAffected == 0 {
+						slog.Warn("Delivery state changed before failure was recorded", "delivery_id", delivery.ID)
+						return
+					}
+
+					select {
+					case retryChannel <- models.NotificationDeliveryMessage{DeliveryID: delivery.ID}:
+					case <-rootContext.Done():
+					}
+					return
+				}
+
+				sentAt := time.Now()
+				result := db.DB.Model(&models.NotificationDelivery{}).
+					Where("id = ? AND status = ?", delivery.ID, models.DeliveryStatusProcessing).
+					Updates(map[string]any{
+						"status":                models.DeliveryStatusSuccess,
+						"sent_at":               &sentAt,
+						"last_error":            "",
+						"processing_started_at": nil,
+					})
+				if result.Error != nil {
+					slog.Error("Failed to mark notification delivery successful", "delivery_id", delivery.ID, "error", result.Error)
+					return
+				}
+				if result.RowsAffected == 0 {
+					slog.Warn("Delivery state changed before success was recorded", "delivery_id", delivery.ID)
+					return
+				}
+				if err := finalizeNotificationJob(delivery.JobID); err != nil {
+					slog.Error("Failed to finalize notification job", "job_id", delivery.JobID, "error", err)
 				}
 			}
+
 			for {
 				select {
 				case <-rootContext.Done():
-					slog.Info("shutdown fired, stopping workers")
 					return
-				case affectedUserMsg, ok := <-affUsersIdChannel:
+				case message, ok := <-deliveryChannel:
 					if !ok {
-						slog.Info("affected users channel closed, worker exiting")
 						return
 					}
-					processSendingEmail(affectedUserMsg)
+					processDelivery(message)
 				}
 			}
 		}(i)
