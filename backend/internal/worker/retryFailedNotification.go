@@ -13,6 +13,13 @@ import (
 	"github.com/icodeologist/disasterwatch/internal/models"
 )
 
+// if afected user email sending failed and you are in failedEmailsChan its retry time
+// retry is 5 right now
+// retry uses exponential backoff timings
+// you failed here too after all that retry
+// you will be pushed to dlq
+// and admin will review you
+
 func StartFailedEmailSendingWorker(rootContext context.Context, wg *sync.WaitGroup, n int, maxTries int, failedEmailsChan chan models.FailedEmailMessage, deadMessageChannel chan models.DLQJob) {
 	slog.Info("FAILED EMAIL WORKERS STARTED", "COUNT", n)
 	for i := 0; i < n; i++ {
