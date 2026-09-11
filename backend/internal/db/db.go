@@ -40,7 +40,7 @@ func Connect() error {
 		slog.Info("Successfully connected to databse")
 	}
 
-	if err := DB.AutoMigrate(&models.Report{}, &models.User{}, &models.Jobs{}, &models.DLQJob{}, &models.EmailBody{}, &models.ProcessedNotification{}); err != nil {
+	if err := DB.AutoMigrate(&models.Report{}, &models.User{}, &models.Jobs{}, &models.DLQJob{}, &models.NotificationDelivery{}); err != nil {
 		return fmt.Errorf("migrate database: %w", err)
 	}
 	return nil
