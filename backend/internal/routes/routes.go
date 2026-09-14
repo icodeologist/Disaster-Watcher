@@ -11,7 +11,6 @@ func SetUpRoutes(router *gin.Engine, server *handler.Server, rateLimiter *auth.R
 
 	router.POST("user/register", auth.UserRegistration)
 	router.POST("user/login", auth.UserLogin)
-	router.GET("api/user/:id", handler.GetUserInfo) // for account page (User Account)
 
 	// ratelimiter middelware for all routes
 
@@ -22,9 +21,10 @@ func SetUpRoutes(router *gin.Engine, server *handler.Server, rateLimiter *auth.R
 		// authMiddlewareRouter.GET("/profile", auth.GetUserProfile)
 		authMiddlewareRouter.POST("/reports", server.CreateReport)
 		authMiddlewareRouter.GET("/reports", handler.GetAllReportsByUserID)
-		authMiddlewareRouter.GET("/get_current_user", auth.GetUserProfileInfo)
+		// authMiddlewareRouter.GET("/get_current_user", auth.GetUserProfileInfo)
 		authMiddlewareRouter.GET("report/:id", handler.GetReportById)
 		authMiddlewareRouter.GET("nearby_reports/:hours", handler.GetReportNearbyPostedLastHours)
+		authMiddlewareRouter.GET("/currentUser", handler.GetUserInfo)
 	}
 
 }
