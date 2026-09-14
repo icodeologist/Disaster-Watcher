@@ -1,4 +1,2 @@
-.env
-/tmp/
-
+# Repository-wide generated files and secrets are ignored by ../.gitignore.
 

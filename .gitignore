@@ -1,3 +1,35 @@
+# Local configuration and credentials
 .env
-tode
+.env.*
+*.env
+*.env.*
+!.env.example
+!*.env.example
+*.pem
+*.key
+*.p12
+*.pfx
 
+# Generated build and test output
+tmp/
+**/tmp/
+bin/
+dist/
+coverage/
+*.out
+*.test
+*.exe
+*.log
+
+# Local database state and dumps
+*.rdb
+*.dump
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+
+# Historical scratch files (issue #22)
+/2
+/backend/3
+tode

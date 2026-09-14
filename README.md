@@ -76,16 +76,9 @@ cd disasterwatch/backend
 Create a `.env` file in the `backend/` directory:
 
 ```env
-HOST=localhost
-DBPORT=5432
-DBUSER=your_db_user
-PASSWORD=your_db_password
-NAME=your_db_name
-JWT_SECRET=your_jwt_secret
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASSWORD=your_app_password
+DATABASE_URL=postgres://your_db_user:your_db_password@localhost:5432/your_db_name
+SECRET=replace_with_a_long_random_value
+PORT=3000
 ```
 
 ### Run with Docker Compose
