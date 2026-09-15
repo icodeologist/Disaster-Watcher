@@ -59,13 +59,16 @@ func main() {
 		VerificationChannel:    verificationChannel,
 	}
 
-	var wg sync.WaitGroup
+	var verificationWorkers sync.WaitGroup
+	var extractionWorkers sync.WaitGroup
+	var notificationWorkers sync.WaitGroup
+	var retryWorkers sync.WaitGroup
 
 	// Start each stage of the notification pipeline before accepting HTTP traffic.
-	worker.StartVerificationWorkers(workContext, &wg, 5, verificationChannel, reportsChannel)
-	worker.StartExtractWorkers(workContext, &wg, 5, reportsChannel, deliveryChannel)
-	worker.StartNotificationWorker(workContext, &wg, 5, deliveryChannel, retryDeliveryChannel)
-	worker.StartFailedEmailSendingWorker(workContext, &wg, 5, maxRetries, retryDeliveryChannel, deadLetterChannel)
+	worker.StartVerificationWorkers(workContext, &verificationWorkers, 5, verificationChannel, reportsChannel)
+	worker.StartExtractWorkers(workContext, &extractionWorkers, 5, reportsChannel, deliveryChannel)
+	worker.StartNotificationWorker(workContext, &notificationWorkers, 5, deliveryChannel, retryDeliveryChannel)
+	worker.StartFailedEmailSendingWorker(workContext, &retryWorkers, 5, maxRetries, retryDeliveryChannel, deadLetterChannel)
 
 	// Track startup recovery separately because it can send to several worker
 	// channels. Shutdown must wait for this sender before closing those channels.
@@ -113,6 +116,9 @@ func main() {
 	}
 	cancelWorkers()
 	recoveryWG.Wait()
-	wg.Wait()
+	verificationWorkers.Wait()
+	extractionWorkers.Wait()
+	notificationWorkers.Wait()
+	retryWorkers.Wait()
 	slog.Info("server stopped")
 }
