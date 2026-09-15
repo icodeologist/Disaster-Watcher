@@ -10,21 +10,22 @@ import (
 )
 
 // RecoverNotificationDeliveries rebuilds the in-memory work queues from durable
-// delivery state. It must run after the delivery workers have started so sending
-// more messages than the channel buffer can hold does not block startup.
-func RecoverNotificationDeliveries(ctx context.Context, deliveryChannel chan<- models.NotificationDeliveryMessage, retryChannel chan<- models.NotificationDeliveryMessage, staleAfter time.Duration) error {
+// delivery state after a process restart. A processing delivery has an uncertain
+// provider outcome, so it is retried with the same provider idempotency key. The
+// function must run after the delivery workers have started so sending more
+// messages than the channel buffer can hold does not block startup.
+func RecoverNotificationDeliveries(ctx context.Context, deliveryChannel chan<- models.NotificationDeliveryMessage, retryChannel chan<- models.NotificationDeliveryMessage) error {
 	now := time.Now()
-	staleBefore := now.Add(-staleAfter)
 
 	if err := db.DB.Model(&models.NotificationDelivery{}).
-		Where("status = ? AND processing_started_at <= ?", models.DeliveryStatusProcessing, staleBefore).
+		Where("status = ?", models.DeliveryStatusProcessing).
 		Updates(map[string]any{
 			"status":                models.DeliveryStatusRetrying,
 			"next_attempt_at":       &now,
 			"processing_started_at": nil,
-			"last_error":            "recovered after worker stopped during processing",
+			"last_error":            "recovered after process stopped during delivery",
 		}).Error; err != nil {
-		return fmt.Errorf("recover stale notification deliveries: %w", err)
+		return fmt.Errorf("release interrupted notification deliveries: %w", err)
 	}
 
 	var deliveries []models.NotificationDelivery

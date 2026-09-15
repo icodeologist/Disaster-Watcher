@@ -74,7 +74,7 @@ func main() {
 		if err := utils.RecoverUnfinishedJobs(workContext, verificationChannel); err != nil && workContext.Err() == nil {
 			slog.Error("Failed to recover unfinished jobs", "error", err)
 		}
-		if err := utils.RecoverNotificationDeliveries(workContext, deliveryChannel, retryDeliveryChannel, 10*time.Minute); err != nil && workContext.Err() == nil {
+		if err := utils.RecoverNotificationDeliveries(workContext, deliveryChannel, retryDeliveryChannel); err != nil && workContext.Err() == nil {
 			slog.Error("Failed to recover notification deliveries", "error", err)
 		}
 	}()
