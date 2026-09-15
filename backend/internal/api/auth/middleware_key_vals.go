@@ -3,8 +3,10 @@ package auth
 // helpers functions to get userinfo
 // middleware helpers routes
 import (
-	"golang.org/x/time/rate"
+	"net/http"
 	"sync"
+
+	"golang.org/x/time/rate"
 
 	"github.com/gin-gonic/gin"
 	"github.com/icodeologist/disasterwatch/internal/db"
@@ -12,11 +14,24 @@ import (
 )
 
 func GetUserProfileInfo(c *gin.Context) {
-	currentUser, _ := c.Get("currentUser")
-	c.JSON(200, gin.H{
-		"current user": currentUser,
-	})
+	currentUserValue, exists := c.Get("currentUser")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized user"})
+		return
+	}
 
+	currentUser, ok := currentUserValue.(models.User)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authenticated user"})
+		return
+	}
+
+	userInfo := models.UserAccountInfoResponse{
+		UserName:     currentUser.UserName,
+		UserEmail:    currentUser.Email,
+		UserLocation: currentUser.Location,
+	}
+	c.JSON(http.StatusOK, gin.H{"current user": userInfo})
 }
 
 func GetAdminUserInfo(c *gin.Context) {

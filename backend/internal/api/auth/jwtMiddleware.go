@@ -75,6 +75,7 @@ func AuthCheckingMiddleware(c *gin.Context) {
 	// set the current authenticated user
 	c.Set("userId", uint(currentUserIDinFloat))
 	c.Set("currentUserEmail", currentUser.Email)
+	c.Set("currentUser", currentUser)
 	c.Next()
 }
 
