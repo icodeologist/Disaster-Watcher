@@ -67,3 +67,64 @@ func TestRecoverUnfinishedJobs(t *testing.T) {
 	require.NoError(t, db.DB.First(&recoveredProcessingJob, processingJob.Id).Error)
 	assert.Equal(t, "pending", recoveredProcessingJob.Status)
 }
+
+func TestRecoverNotificationDeliveriesImmediatelyRetriesProcessingDelivery(t *testing.T) {
+	originalDB := db.DB
+	tx := originalDB.Begin()
+	require.NoError(t, tx.Error)
+	db.DB = tx
+	t.Cleanup(func() {
+		tx.Rollback()
+		db.DB = originalDB
+	})
+
+	// Recovery scans all recoverable deliveries, so hide any rows left in the
+	// configured test database. The rollback restores them after this test.
+	require.NoError(t, db.DB.Exec("DELETE FROM notification_deliveries").Error)
+
+	job := models.Jobs{Status: "processing", Payload: []byte(`{}`)}
+	require.NoError(t, db.DB.Create(&job).Error)
+
+	// Keep this delivery only one minute old. The old recovery waited until a
+	// processing delivery was older than ten minutes, so this same test would
+	// leave the row in processing. After restart we now recover it immediately.
+	processingStartedAt := time.Now().Add(-time.Minute)
+	delivery := models.NotificationDelivery{
+		IdempotencyKey:      fmt.Sprintf("immediate-delivery-recovery-test/%d", job.Id),
+		JobID:               job.Id,
+		UserID:              uint(job.Id),
+		RecipientEmail:      "immediate-recovery@example.com",
+		Status:              models.DeliveryStatusProcessing,
+		Attempts:            2,
+		ProcessingStartedAt: &processingStartedAt,
+	}
+	require.NoError(t, db.DB.Create(&delivery).Error)
+
+	deliveryChannel := make(chan models.NotificationDeliveryMessage, 1)
+	retryChannel := make(chan models.NotificationDeliveryMessage, 1)
+	recoveryStartedAt := time.Now()
+	require.NoError(t, RecoverNotificationDeliveries(context.Background(), deliveryChannel, retryChannel))
+	recoveryFinishedAt := time.Now()
+
+	var recovered models.NotificationDelivery
+	require.NoError(t, db.DB.First(&recovered, delivery.ID).Error)
+	assert.Equal(t, models.DeliveryStatusRetrying, recovered.Status)
+	assert.Nil(t, recovered.ProcessingStartedAt)
+	require.NotNil(t, recovered.NextAttemptAt)
+	assert.WithinDuration(t, recoveryStartedAt, *recovered.NextAttemptAt, time.Second)
+	assert.False(t, recovered.NextAttemptAt.After(recoveryFinishedAt.Add(time.Second)))
+	assert.Equal(t, delivery.Attempts, recovered.Attempts)
+
+	select {
+	case message := <-retryChannel:
+		assert.Equal(t, delivery.ID, message.DeliveryID)
+	default:
+		t.Fatal("expected recovered delivery on retry channel")
+	}
+
+	select {
+	case message := <-deliveryChannel:
+		t.Fatalf("did not expect delivery %d on normal delivery channel", message.DeliveryID)
+	default:
+	}
+}
