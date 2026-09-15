@@ -22,6 +22,21 @@ import (
 	"github.com/joho/godotenv"
 )
 
+func waitForWorkers(ctx context.Context, workers *sync.WaitGroup) error {
+	done := make(chan struct{})
+	go func() {
+		workers.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func main() {
 	// Use one logger for the API and every background worker.
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -35,9 +50,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// This context tells every worker when graceful shutdown begins.
+	// Workers keep using this context while the pipeline drains. It is canceled
+	// only when the shutdown deadline expires or a second signal is received.
 	workContext, cancelWorkers := context.WithCancel(context.Background())
-	signalChannel := make(chan os.Signal, 1)
+	defer cancelWorkers()
+	// Keep room for the first graceful signal and a second force-stop signal.
+	signalChannel := make(chan os.Signal, 2)
 	signal.Notify(signalChannel, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(signalChannel)
 
@@ -106,19 +124,68 @@ func main() {
 		}
 	}()
 
-	// Stop accepting requests, notify workers, and wait for their current work.
-	<-signalChannel
-	slog.Info("Received shutdown signal")
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// The first signal starts a bounded drain. The same deadline covers active
+	// HTTP handlers and every worker stage.
+	firstSignal := <-signalChannel
+	slog.Info("Received shutdown signal", "signal", firstSignal)
+	const shutdownGracePeriod = 5 * time.Minute
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownGracePeriod)
 	defer shutdownCancel()
+
+	shutdownComplete := make(chan struct{})
+	defer close(shutdownComplete)
+	go func() {
+		select {
+		case secondSignal := <-signalChannel:
+			slog.Warn("Received second shutdown signal; stopping immediately", "signal", secondSignal)
+			cancelWorkers()
+			shutdownCancel()
+		case <-shutdownCtx.Done():
+			cancelWorkers()
+		case <-shutdownComplete:
+		}
+	}()
+
+	// Shutdown closes the HTTP listener first and waits for active handlers. Only
+	// then is it safe to close the channel those handlers send to.
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		slog.Info("Server shutdown : ", "error", err)
+		slog.Warn("HTTP shutdown did not finish; unfinished work will be recovered on restart", "error", err)
+		cancelWorkers()
+		return
 	}
-	cancelWorkers()
-	recoveryWG.Wait()
-	verificationWorkers.Wait()
-	extractionWorkers.Wait()
-	notificationWorkers.Wait()
-	retryWorkers.Wait()
+
+	// Startup recovery can send directly to several channels. Wait for it before
+	// beginning channel closure so it cannot send into a closed channel.
+	if err := waitForWorkers(shutdownCtx, &recoveryWG); err != nil {
+		slog.Warn("Shutdown deadline reached while waiting for startup recovery", "error", err)
+		return
+	}
+
+	close(verificationChannel)
+	if err := waitForWorkers(shutdownCtx, &verificationWorkers); err != nil {
+		slog.Warn("Shutdown deadline reached while draining verification work", "error", err)
+		return
+	}
+
+	close(reportsChannel)
+	if err := waitForWorkers(shutdownCtx, &extractionWorkers); err != nil {
+		slog.Warn("Shutdown deadline reached while draining report work", "error", err)
+		return
+	}
+
+	close(deliveryChannel)
+	if err := waitForWorkers(shutdownCtx, &notificationWorkers); err != nil {
+		slog.Warn("Shutdown deadline reached while draining delivery work", "error", err)
+		return
+	}
+
+	close(retryDeliveryChannel)
+	if err := waitForWorkers(shutdownCtx, &retryWorkers); err != nil {
+		slog.Warn("Shutdown deadline reached while draining retry work", "error", err)
+		return
+	}
+
+	close(deadLetterChannel)
+	slog.Info("All accepted channel work finished before shutdown")
 	slog.Info("server stopped")
 }
