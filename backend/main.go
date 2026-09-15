@@ -67,10 +67,12 @@ func main() {
 	worker.StartNotificationWorker(workContext, &wg, 5, deliveryChannel, retryDeliveryChannel)
 	worker.StartFailedEmailSendingWorker(workContext, &wg, 5, maxRetries, retryDeliveryChannel, deadLetterChannel)
 
-	// Rebuild channel messages for unfinished work stored before a restart.
-	wg.Add(1)
+	// Track startup recovery separately because it can send to several worker
+	// channels. Shutdown must wait for this sender before closing those channels.
+	var recoveryWG sync.WaitGroup
+	recoveryWG.Add(1)
 	go func() {
-		defer wg.Done()
+		defer recoveryWG.Done()
 		if err := utils.RecoverUnfinishedJobs(workContext, verificationChannel); err != nil && workContext.Err() == nil {
 			slog.Error("Failed to recover unfinished jobs", "error", err)
 		}
@@ -110,6 +112,7 @@ func main() {
 		slog.Info("Server shutdown : ", "error", err)
 	}
 	cancelWorkers()
+	recoveryWG.Wait()
 	wg.Wait()
 	slog.Info("server stopped")
 }
