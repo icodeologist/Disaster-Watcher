@@ -19,11 +19,3 @@ type User struct {
 	UserTrustScore                     int      `json:"userTrustScore" gorm:"column:trustscore;default:0"`
 	TotalReportPosted                  int      `json:"totalReportPosted" gorm:"default:0"`
 }
-
-// this help during auth handlers
-type AuthInput struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Location string `json:"location"`
-}
