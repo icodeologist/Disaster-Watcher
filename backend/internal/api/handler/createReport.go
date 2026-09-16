@@ -1,28 +1,23 @@
-// user_api_endpoints.go contains all the crud endpoint functions
+// user_api_endpoints.go contains all the CRUD endpoint functions.
 package handler
 
 import (
-	// "context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
-
-	// "time"
-
-	// "strconv"
-	//
-	// "fmt"
-	"log/slog"
 
 	"github.com/gin-gonic/gin"
 	database "github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
 	"github.com/icodeologist/disasterwatch/internal/utils"
+	"gorm.io/gorm"
 )
 
 func (s *Server) CreateReport(c *gin.Context) {
-	var userReport models.Report
-	if err := c.ShouldBindJSON(&userReport); err != nil {
+	var report models.Report
+	if err := c.ShouldBindJSON(&report); err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
@@ -33,108 +28,97 @@ func (s *Server) CreateReport(c *gin.Context) {
 		})
 		return
 	}
-	userId, exists := c.Get("userId")
-	if !exists {
-		slog.Error("user id does not exist", "user_id", userId)
-	}
-	userReport.UserId = userId.(uint)
 
-	if err := database.DB.Create(&userReport).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+	userIDValue, exists := c.Get("userId")
+	userID, validUserID := userIDValue.(uint)
+	if !exists || !validUserID {
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
-				ErrorCode:    "DATABASE_ERR",
-				ErrorDetails: err.Error(),
+				ErrorCode: "UNAUTHORIZED",
+				Message:   "authenticated user is required",
 			},
 		})
 		return
 	}
-	if err := database.DB.Preload("User").First(&userReport, userReport.ID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Success: false,
-			Error: models.Error{
-				ErrorCode:    "DATABASE_ERR",
-				ErrorDetails: err.Error(),
-			},
-		})
-		return
-	}
+	report.UserId = userID
 
-	if err := utils.ConvertReportLocationTOLatAndLong(c.Request.Context(), &userReport); err != nil {
-		println("err : ", err)
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Success: false,
-			Error: models.Error{
-				ErrorCode: "CACHING_COORDINATES_ERR",
-				// FIX: Make something about this
-				Message:      "Add the exact land mark not vague location",
-				ErrorDetails: err.Error(),
-			},
-		})
-		return
-	}
-	// data that we will send to other worker stream
-	payloadData := models.PayloadData{
-		ReportID: userReport.ID,
-		UserID:   userReport.UserId,
-	}
-	// payloadData struct to byte
-	payLoadBytes, err := json.Marshal(payloadData)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Success: false,
-			Error: models.Error{
-				ErrorCode:    "JSON_MARSHAL_ERR",
-				Message:      "Converting payload data struct to bytes failed",
-				ErrorDetails: err.Error(),
-			},
-		})
-		return
-	}
-	job := models.Jobs{
-		Status:     "pending",
-		Payload:    payLoadBytes,
-		Created_at: time.Now(),
-	}
-	slog.Info("Job created", "created_time", job.Created_at)
-
-	// making each job persist
-	if err := database.DB.Create(&job).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Success: false,
-			Error: models.Error{
-				ErrorCode:    "DATABASE_ERR",
-				ErrorDetails: err.Error(),
-			},
-		})
-		return
-	}
-	// push to channel in select block under normal flow
-	verificationMsg := models.VerificationMessage{
-		JobID: job.Id,
-	}
-	select {
-	case s.VerificationChannel <- verificationMsg:
-		job.Started_at = time.Now()
-		job.Status = "processing"
-		err := database.DB.Save(&job).Error
+	// Geocoding is an external call. Do it before opening the transaction so
+	// the transaction stays short and never holds a database connection while
+	// waiting on the network.
+	if !report.ISLocationCached || report.CachedLat == nil || report.CachedLong == nil {
+		location, err := utils.GetLATLONGfromUserLocation(c.Request.Context(), report.Location)
 		if err != nil {
-			slog.Error("Failed to save the job to DB in CreateReport endpoint", "error", err)
-			return
-		} else {
-			slog.Info("Job started", "started_time", job.Started_at)
-			c.JSON(http.StatusAccepted, models.SuccessResponse{
-				Success: true,
-				Data:    userReport,
-				Message: "Successfully created the report. Wait for the verfication process.",
+			slog.Error("failed to geocode report location", "error", err)
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Success: false,
+				Error: models.Error{
+					ErrorCode: "CACHING_COORDINATES_ERR",
+					Message:   "unable to resolve report location",
+				},
 			})
+			return
 		}
+		report.CachedLat = &location.Lat
+		report.CachedLong = &location.Long
+		report.ISLocationCached = true
+	}
+
+	var job models.Jobs
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&report).Error; err != nil {
+			return fmt.Errorf("create report: %w", err)
+		}
+
+		payload, err := json.Marshal(models.PayloadData{
+			ReportID: report.ID,
+			UserID:   report.UserId,
+		})
+		if err != nil {
+			return fmt.Errorf("marshal report job payload: %w", err)
+		}
+
+		now := time.Now()
+		job = models.Jobs{
+			Status:     "processing",
+			Payload:    payload,
+			Created_at: now,
+			Started_at: now,
+		}
+		if err := tx.Create(&job).Error; err != nil {
+			return fmt.Errorf("create report job: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		slog.Error("failed to persist report and job", "error", err)
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Success: false,
+			Error: models.Error{
+				ErrorCode:    "DATABASE_ERR",
+				Message:      "report was not accepted",
+				ErrorDetails: err.Error(),
+			},
+		})
+		return
+	}
+
+	// Publish only after the transaction commits. If the queue is full, the
+	// durable processing job remains available to startup recovery.
+	select {
+	case s.VerificationChannel <- models.VerificationMessage{JobID: job.Id}:
+		slog.Info("report accepted", "report_id", report.ID, "job_id", job.Id)
+		c.JSON(http.StatusAccepted, models.SuccessResponse{
+			Success: true,
+			Data:    report,
+			Message: "Successfully created the report. Wait for the verification process.",
+		})
 	default:
-		c.JSON(503, models.ErrorResponse{
+		c.JSON(http.StatusServiceUnavailable, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
 				ErrorCode: "QUEUE_FULL",
-				Message:   "Worker queue is currently full.",
+				Message:   "report was stored but could not be queued immediately; it will be recovered",
 			},
 		})
 	}
