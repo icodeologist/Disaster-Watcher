@@ -2,14 +2,9 @@
 package handler
 
 import (
-	// "context"
+	"log/slog"
 	"net/http"
 	"strconv"
-	// "time"
-
-	// "strconv"
-	//
-	// "fmt"
 
 	"github.com/gin-gonic/gin"
 	database "github.com/icodeologist/disasterwatch/internal/db"
@@ -26,7 +21,8 @@ func GetAllReportsByUserID(c *gin.Context) {
 		return
 	}
 	if err := database.DB.Preload("User").Where("user_id=?", userId).Find(&reportsPostedByUser).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("failed to load reports for user", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable to load reports"})
 		return
 	}
 	c.JSON(http.StatusOK, reportsPostedByUser)
@@ -62,7 +58,8 @@ func DeleteReportById(c *gin.Context) {
 func GetAllReports(c *gin.Context) {
 	var reports []models.Report
 	if err := database.DB.Preload("User").Find(&reports).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("failed to load reports", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable to load reports"})
 		return
 	}
 	c.JSON(200, reports)
@@ -80,14 +77,15 @@ func GetNearByReports(c *gin.Context) {
 	radiusDistance, err3 := strconv.ParseFloat(radius, 64)
 
 	if err1 != nil || err2 != nil || err3 != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "some error during parsing the queried variables"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "lat, long, and rad must be valid numbers"})
 		return
 	}
 
 	var allReports []models.Report
 
 	if err := database.DB.Preload("User").Find(&allReports).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("failed to load reports for nearby search", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable to load reports"})
 		return
 	}
 
