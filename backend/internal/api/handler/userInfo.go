@@ -2,6 +2,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -19,11 +20,12 @@ func GetUserInfo(c *gin.Context) {
 	}
 	var user models.User
 	if err := db.DB.Where("id=?", id).First(&user).Error; err != nil {
+		slog.Error("failed to load current user", "error", err)
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
-				ErrorCode:    "DATABASE_ERR",
-				ErrorDetails: err.Error(),
+				ErrorCode: "DATABASE_ERR",
+				Message:   "unable to load current user",
 			},
 		})
 		return
