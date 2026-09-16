@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -39,8 +40,8 @@ func TestCreateReportRollsBackWhenJobCreationFails(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	response := httptest.NewRecorder()
-	context, _ := gin.CreateTestContext(response)
-	context.Request = httptest.NewRequest(http.MethodPost, "/reports", strings.NewReader(`{
+	ginContext, _ := gin.CreateTestContext(response)
+	ginContext.Request = httptest.NewRequest(http.MethodPost, "/reports", strings.NewReader(`{
 		"title":"Flood warning",
 		"description":"Water is entering homes",
 		"location":"Central Station",
@@ -50,12 +51,15 @@ func TestCreateReportRollsBackWhenJobCreationFails(t *testing.T) {
 		"latitude":12.9,
 		"longitude":77.6
 	}`))
-	context.Set("userId", uint(7))
+	ginContext.Set("userId", uint(7))
 	server := &Server{
 		VerificationChannel: make(chan models.VerificationMessage, 1),
+		GeocodeLocation: func(context.Context, string) (*models.Location, error) {
+			return &models.Location{Lat: 12.9, Long: 77.6}, nil
+		},
 	}
 
-	server.CreateReport(context)
+	server.CreateReport(ginContext)
 
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusInternalServerError)
@@ -92,8 +96,8 @@ func TestCreateReportRollsBackWhenReportCreationFails(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	response := httptest.NewRecorder()
-	context, _ := gin.CreateTestContext(response)
-	context.Request = httptest.NewRequest(http.MethodPost, "/reports", strings.NewReader(`{
+	ginContext, _ := gin.CreateTestContext(response)
+	ginContext.Request = httptest.NewRequest(http.MethodPost, "/reports", strings.NewReader(`{
 		"title":"Flood warning",
 		"description":"Water is entering homes",
 		"location":"Central Station",
@@ -103,12 +107,15 @@ func TestCreateReportRollsBackWhenReportCreationFails(t *testing.T) {
 		"latitude":12.9,
 		"longitude":77.6
 	}`))
-	context.Set("userId", uint(7))
+	ginContext.Set("userId", uint(7))
 	server := &Server{
 		VerificationChannel: make(chan models.VerificationMessage, 1),
+		GeocodeLocation: func(context.Context, string) (*models.Location, error) {
+			return &models.Location{Lat: 12.9, Long: 77.6}, nil
+		},
 	}
 
-	server.CreateReport(context)
+	server.CreateReport(ginContext)
 
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusInternalServerError)
@@ -120,5 +127,28 @@ func TestCreateReportRollsBackWhenReportCreationFails(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("database expectations: %v", err)
+	}
+}
+
+func TestCreateReportRejectsInvalidInputBeforeDatabaseAccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	response := httptest.NewRecorder()
+	ginContext, _ := gin.CreateTestContext(response)
+	ginContext.Request = httptest.NewRequest(http.MethodPost, "/reports", strings.NewReader(`{
+		"title":"short",
+		"description":"too short",
+		"location":"London",
+		"category":"volcano",
+		"priority":"urgent"
+	}`))
+
+	server := &Server{VerificationChannel: make(chan models.VerificationMessage, 1)}
+	server.CreateReport(ginContext)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	if strings.Contains(response.Body.String(), "volcano") || strings.Contains(response.Body.String(), "sql") {
+		t.Fatalf("response leaked request or infrastructure details: %s", response.Body.String())
 	}
 }
