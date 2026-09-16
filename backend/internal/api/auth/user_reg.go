@@ -3,33 +3,33 @@ package auth
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
+	"errors"
+	"log/slog"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	database "github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
 	"github.com/icodeologist/disasterwatch/internal/utils"
-	"net/http"
+	"gorm.io/gorm"
 )
 
-// User registration with password hashing and location caching
-// location caching	-> Mapping user location to lat long and storing it in db
+// Validate the request, cache the location, and store a new user.
 func UserRegistration(c *gin.Context) {
-	var userInput models.AuthInput
-	var userFound models.User
-
-	if err := c.ShouldBindJSON(&userInput); err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Success: false,
-			Error: models.Error{
-				ErrorCode:    "INVALID_INPUT",
-				Message:      "Invalid input or empty json data",
-				ErrorDetails: err.Error(),
-			},
-		})
+	var input models.UserRegistrationRequest
+	if err := c.ShouldBindJSON(&input); err != nil || input.Validate() != nil {
+		writeInvalidInput(c)
+		return
 	}
-	// checking if the user has already registered
-	database.DB.Where("user_name = ?", userInput.Username).First(&userFound)
-	if userFound.ID != 0 {
+
+	var existing models.User
+	lookup := database.DB.Where("user_name = ?", input.Username).First(&existing)
+	if lookup.Error != nil && !errors.Is(lookup.Error, gorm.ErrRecordNotFound) {
+		slog.Error("failed to check username", "error", lookup.Error)
+		writeServerError(c, "unable to create user")
+		return
+	}
+	if existing.ID != 0 {
 		c.JSON(http.StatusConflict, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
@@ -39,52 +39,38 @@ func UserRegistration(c *gin.Context) {
 		})
 		return
 	}
-	hashedPassword, err := utils.HashPassword(userInput.Password)
+
+	hashedPassword, err := utils.HashPassword(input.Password)
 	if err != nil {
+		slog.Error("failed to hash password", "error", err)
+		writeServerError(c, "unable to create user")
+		return
+	}
+
+	user := models.User{
+		UserName: input.Username,
+		Password: hashedPassword,
+		Email:    input.Email,
+		Location: input.Location,
+	}
+	if err := utils.CachedUserCords(c.Request.Context(), &user); err != nil {
+		slog.Error("failed to cache user location", "error", err)
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
-				ErrorCode:    "HASH_PASSWORD_ERROR",
-				ErrorDetails: err.Error(),
+				ErrorCode: "CACHED_COORDINATES_ERROR",
+				Message:   "Please enter a valid location.",
 			},
 		})
 		return
 	}
 
-	var user models.User
-	user.UserName = userInput.Username
-	user.Password = hashedPassword
-	user.Email = userInput.Email
-	user.Location = userInput.Location
+	if err := database.DB.Create(&user).Error; err != nil {
+		slog.Error("failed to create user", "error", err)
+		writeServerError(c, "unable to create user")
+		return
+	}
 
-	err = utils.CachedUserCords(c.Request.Context(), &user)
-	fmt.Println("Done with caching passwords")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Success: false,
-			Error: models.Error{
-				ErrorCode:    "CACHED_CORDINATES_ERR",
-				Message:      "Please enter the valid location name. If You live in remote area you could try to find the lat and long from the nominatm api",
-				ErrorDetails: err.Error(),
-			},
-		})
-		return
-	}
-	// check if user gives a special key
-	res := database.DB.Create(&user)
-	fmt.Println("res error :", res)
-	if res.Error != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Success: false,
-			Error: models.Error{
-				ErrorCode:    "DATABASE_ERR",
-				Message:      "Error occured while creating a user.",
-				ErrorDetails: res.Error.Error(),
-			},
-		})
-		database.DB.Delete(&user)
-		return
-	}
 	c.JSON(http.StatusCreated, models.SuccessResponse{
 		Success: true,
 		Message: "User has been created. You can login.",
@@ -101,74 +87,78 @@ func UserRegistration(c *gin.Context) {
 	})
 }
 
-// UserLogin handler with JWT token generation
+// Check the credentials and return a signed token.
 func UserLogin(c *gin.Context) {
-	var userInput models.AuthInput
-	if err := c.ShouldBindJSON(&userInput); err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Success: false,
-			Error: models.Error{
-				ErrorCode:    "INVALID_JSON",
-				Message:      "Invalid input or empty json datat",
-				ErrorDetails: err.Error(),
-			},
-		})
+	var input models.UserLoginRequest
+	if err := c.ShouldBindJSON(&input); err != nil || input.Validate() != nil {
+		writeInvalidInput(c)
 		return
 	}
-	var userFound models.User
-	database.DB.Where("email=?", userInput.Email).First(&userFound)
-	if userFound.ID == 0 {
+
+	var user models.User
+	lookup := database.DB.Where("email = ?", input.Email).First(&user)
+	if errors.Is(lookup.Error, gorm.ErrRecordNotFound) || user.ID == 0 {
 		c.JSON(http.StatusNotFound, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
 				ErrorCode: "USER_NOT_FOUND",
-				Message:   "User email does not exists",
+				Message:   "User email does not exist.",
 			},
 		})
 		return
 	}
-	if err := utils.CheckHashPasswords(userInput.Password, userFound.Password); err != nil {
+	if lookup.Error != nil {
+		slog.Error("failed to find user for login", "error", lookup.Error)
+		writeServerError(c, "unable to login")
+		return
+	}
+
+	if err := utils.CheckHashPasswords(input.Password, user.Password); err != nil {
+		slog.Warn("password verification failed", "error", err)
 		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
-				ErrorCode:    "INVALID_CREDENTIALS",
-				Message:      "Your password does not match.",
-				ErrorDetails: err.Error(),
+				ErrorCode: "INVALID_CREDENTIALS",
+				Message:   "Invalid email or password.",
 			},
 		})
 		return
 	}
-	// if userInput.AmdinSecretKey != "" {
-	//
-	// 	// TODO: change the status code
-	// 	if userInput.AmdinSecretKey != os.Getenv("ADMINCODE") {
-	// 		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
-	// 			Success: false,
-	// 			Error: models.Error{
-	// 				ErrorCode: "INVALID_ADMIN_CREDENTIALS",
-	// 				Message:   "Your admin secret key does not match",
-	// 			},
-	// 		})
-	// 		return
-	// 	}
-	jwtToken, err := GenerateAndSignJwtToken(userFound)
+
+	token, err := GenerateAndSignJwtToken(user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Success: false,
-			Error: models.Error{
-				ErrorCode:    "JWT_ERROR",
-				ErrorDetails: err.Error(),
-			},
-		})
+		slog.Error("failed to sign login token", "error", err)
+		writeServerError(c, "unable to login")
+		return
 	}
 	c.JSON(http.StatusOK, models.SuccessResponse{
 		Success: true,
-		Data:    jwtToken,
+		Data:    token,
 		Message: "You logged in. Use this token to access authorized endpoints.",
 	})
 }
 
-// GenerateToken remains the same…
+func writeInvalidInput(c *gin.Context) {
+	c.JSON(http.StatusBadRequest, models.ErrorResponse{
+		Success: false,
+		Error: models.Error{
+			ErrorCode: "INVALID_INPUT",
+			Message:   "Please provide valid required fields.",
+		},
+	})
+}
+
+func writeServerError(c *gin.Context, message string) {
+	c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+		Success: false,
+		Error: models.Error{
+			ErrorCode: "INTERNAL_ERROR",
+			Message:   message,
+		},
+	})
+}
+
+// GenerateToken returns a cryptographically random hexadecimal token.
 func GenerateToken(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
