@@ -146,46 +146,22 @@ func main() {
 		}
 	}()
 
-	// Shutdown closes the HTTP listener first and waits for active handlers. Only
-	// then is it safe to close the channel those handlers send to.
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		slog.Warn("HTTP shutdown did not finish; unfinished work will be recovered on restart", "error", err)
+	pipeline := shutdownPipeline{
+		recoveryWorkers: &recoveryWG,
+		stages: []drainStage{
+			{name: "verification", input: func() { close(verificationChannel) }, workers: &verificationWorkers},
+			{name: "report extraction", input: func() { close(reportsChannel) }, workers: &extractionWorkers},
+			{name: "notification delivery", input: func() { close(deliveryChannel) }, workers: &notificationWorkers},
+			{name: "notification retry", input: func() { close(retryDeliveryChannel) }, workers: &retryWorkers},
+		},
+		closeAfterDrain: func() { close(deadLetterChannel) },
+	}
+	if err := shutdownGracefully(shutdownCtx, server, pipeline); err != nil {
+		slog.Warn("Graceful shutdown did not finish; unfinished work will be recovered on restart", "error", err)
 		cancelWorkers()
 		return
 	}
 
-	// Startup recovery can send directly to several channels. Wait for it before
-	// beginning channel closure so it cannot send into a closed channel.
-	if err := waitForWorkers(shutdownCtx, &recoveryWG); err != nil {
-		slog.Warn("Shutdown deadline reached while waiting for startup recovery", "error", err)
-		return
-	}
-
-	close(verificationChannel)
-	if err := waitForWorkers(shutdownCtx, &verificationWorkers); err != nil {
-		slog.Warn("Shutdown deadline reached while draining verification work", "error", err)
-		return
-	}
-
-	close(reportsChannel)
-	if err := waitForWorkers(shutdownCtx, &extractionWorkers); err != nil {
-		slog.Warn("Shutdown deadline reached while draining report work", "error", err)
-		return
-	}
-
-	close(deliveryChannel)
-	if err := waitForWorkers(shutdownCtx, &notificationWorkers); err != nil {
-		slog.Warn("Shutdown deadline reached while draining delivery work", "error", err)
-		return
-	}
-
-	close(retryDeliveryChannel)
-	if err := waitForWorkers(shutdownCtx, &retryWorkers); err != nil {
-		slog.Warn("Shutdown deadline reached while draining retry work", "error", err)
-		return
-	}
-
-	close(deadLetterChannel)
 	slog.Info("All accepted channel work finished before shutdown")
 	slog.Info("server stopped")
 }
