@@ -1,11 +1,16 @@
 package handler
 
-import "github.com/icodeologist/disasterwatch/internal/models"
+import (
+	"context"
+
+	"github.com/icodeologist/disasterwatch/internal/models"
+)
 
 type Server struct {
 	ReportChannel          chan models.ReportMessage
 	AffectedUsersIdChannel chan models.NotificationDeliveryMessage
 	VerificationChannel    chan models.VerificationMessage
+	GeocodeLocation        func(context.Context, string) (*models.Location, error)
 }
 
 // SO server struct act as a dependency bag
