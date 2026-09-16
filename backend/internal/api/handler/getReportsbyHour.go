@@ -16,13 +16,13 @@ import (
 func GetReportNearbyPostedLastHours(c *gin.Context) {
 	hours := c.DefaultQuery("hours", "24")
 	hoursInt, err := strconv.Atoi(hours)
-	if err != nil {
+	if err != nil || hoursInt < 1 || hoursInt > 168 {
 		slog.Error("converting string to int", "err", err)
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
-				ErrorCode:    "STR_CONV_ERR",
-				ErrorDetails: err.Error(),
+				ErrorCode: "INVALID_HOURS",
+				Message:   "hours must be between 1 and 168",
 			},
 		})
 		return
@@ -36,8 +36,8 @@ func GetReportNearbyPostedLastHours(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
-				ErrorCode:    "DB_FETCH_ERR",
-				ErrorDetails: err.Error(),
+				ErrorCode: "DB_FETCH_ERR",
+				Message:   "unable to fetch nearby reports",
 			},
 		})
 		return
@@ -49,21 +49,21 @@ func GetReportNearbyPostedLastHours(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
-				ErrorCode:    "UNAUTHORIZED",
-				ErrorDetails: "user not authenticated",
+				ErrorCode: "UNAUTHORIZED",
+				Message:   "user not authenticated",
 			},
 		})
 		return
 
 	}
 	var user models.User
-	if err := db.DB.Where("user_id=?", uId).First(&user).Error; err != nil {
+	if err := db.DB.Where("id=?", uId).First(&user).Error; err != nil {
 		slog.Error("failed to fetch user from db", "err", err)
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
-				ErrorCode:    "DB_FETCH_ERR",
-				ErrorDetails: err.Error(),
+				ErrorCode: "DB_FETCH_ERR",
+				Message:   "unable to fetch nearby reports",
 			},
 		})
 		return
