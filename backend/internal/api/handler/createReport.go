@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -16,17 +17,23 @@ import (
 )
 
 func (s *Server) CreateReport(c *gin.Context) {
-	var report models.Report
-	if err := c.ShouldBindJSON(&report); err != nil {
+	var input models.CreateReportRequest
+	if err := c.ShouldBindJSON(&input); err != nil || input.Validate() != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
-				ErrorCode:    "INVALID_JSON",
-				Message:      "User request either has empty or invalid json",
-				ErrorDetails: err.Error(),
+				ErrorCode: "INVALID_INPUT",
+				Message:   "Please provide valid report fields.",
 			},
 		})
 		return
+	}
+	report := models.Report{
+		Title:       input.Title,
+		Description: input.Description,
+		Location:    input.Location,
+		Category:    strings.ToLower(strings.TrimSpace(input.Category)),
+		Priority:    strings.ToLower(strings.TrimSpace(input.Priority)),
 	}
 
 	userIDValue, exists := c.Get("userId")
@@ -47,7 +54,11 @@ func (s *Server) CreateReport(c *gin.Context) {
 	// the transaction stays short and never holds a database connection while
 	// waiting on the network.
 	if !report.ISLocationCached || report.CachedLat == nil || report.CachedLong == nil {
-		location, err := utils.GetLATLONGfromUserLocation(c.Request.Context(), report.Location)
+		geocode := s.GeocodeLocation
+		if geocode == nil {
+			geocode = utils.GetLATLONGfromUserLocation
+		}
+		location, err := geocode(c.Request.Context(), report.Location)
 		if err != nil {
 			slog.Error("failed to geocode report location", "error", err)
 			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
@@ -95,9 +106,8 @@ func (s *Server) CreateReport(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
-				ErrorCode:    "DATABASE_ERR",
-				Message:      "report was not accepted",
-				ErrorDetails: err.Error(),
+				ErrorCode: "DATABASE_ERR",
+				Message:   "report was not accepted",
 			},
 		})
 		return
