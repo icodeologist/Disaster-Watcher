@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"sync"
@@ -9,6 +10,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/icodeologist/disasterwatch/internal/models"
 	"golang.org/x/time/rate"
+)
+
+const (
+	defaultVisitorInactiveAfter = 7 * 24 * time.Hour
+	defaultCleanupInterval      = 7 * 24 * time.Hour
 )
 
 // Each ip will have LimiterInfo
@@ -24,6 +30,8 @@ type RateLimitMiddleware struct {
 	NoOfEventsPerSec rate.Limit
 	TokenCap         int
 	mu               sync.Mutex
+	inactiveAfter    time.Duration
+	cleanupInterval  time.Duration
 }
 
 func NewRateLimiterMiddleware(noOfevents rate.Limit, tCapacity int) *RateLimitMiddleware {
@@ -31,6 +39,8 @@ func NewRateLimiterMiddleware(noOfevents rate.Limit, tCapacity int) *RateLimitMi
 		Visitors:         make(map[string]*LimiterInfo),
 		NoOfEventsPerSec: noOfevents,
 		TokenCap:         tCapacity,
+		inactiveAfter:    defaultVisitorInactiveAfter,
+		cleanupInterval:  defaultCleanupInterval,
 	}
 }
 
@@ -49,26 +59,42 @@ func (rl *RateLimitMiddleware) GetLimiter(ip string) *LimiterInfo {
 }
 
 func (rl *RateLimitMiddleware) CleanUpNotActiveIps() {
-	for _, limitinfo := range rl.Visitors {
-		t := time.Now()
-		lastSeemTime := t.Sub(limitinfo.LastSeen)
-		log.Println("TIME ELASPED : ", lastSeemTime)
+	now := time.Now()
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	for ip, limiterInfo := range rl.Visitors {
+		if limiterInfo == nil || now.Sub(limiterInfo.LastSeen) >= rl.inactiveAfter {
+			delete(rl.Visitors, ip)
+		}
 	}
 }
 
-// Go func sleep until 7 day is up and then it runs CleanUpNotActiveIps
-func (rl *RateLimitMiddleware) RUNCleanUPEvery7Days() {
-	ticker := time.NewTicker(24 * 7 * time.Hour)
+// StartCleanup owns the cleanup ticker and stops it when ctx is canceled.
+// The returned channel closes after the ticker and goroutine have stopped.
+func (rl *RateLimitMiddleware) StartCleanup(ctx context.Context) <-chan struct{} {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	interval := rl.cleanupInterval
+	if interval <= 0 {
+		interval = defaultCleanupInterval
+	}
+	ticker := time.NewTicker(interval)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				rl.mu.Lock()
-				defer rl.mu.Unlock()
 				rl.CleanUpNotActiveIps()
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
+	return done
 }
 
 func (rl *RateLimitMiddleware) RateLimitingMiddelware(c *gin.Context) {

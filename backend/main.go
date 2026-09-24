@@ -104,6 +104,7 @@ func main() {
 
 	// Build the API after all worker dependencies are ready.
 	ratelimitMiddleware := auth.NewRateLimiterMiddleware(10, 5)
+	ratelimitMiddleware.StartCleanup(workContext)
 	router := gin.Default()
 	routes.SetUpRoutes(router, workerServer, ratelimitMiddleware)
 
