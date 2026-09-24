@@ -134,17 +134,7 @@ func main() {
 
 	shutdownComplete := make(chan struct{})
 	defer close(shutdownComplete)
-	go func() {
-		select {
-		case secondSignal := <-signalChannel:
-			slog.Warn("Received second shutdown signal; stopping immediately", "signal", secondSignal)
-			cancelWorkers()
-			shutdownCancel()
-		case <-shutdownCtx.Done():
-			cancelWorkers()
-		case <-shutdownComplete:
-		}
-	}()
+	go watchForForcedShutdown(signalChannel, shutdownCtx, shutdownComplete, cancelWorkers, shutdownCancel)
 
 	pipeline := shutdownPipeline{
 		recoveryWorkers: &recoveryWG,

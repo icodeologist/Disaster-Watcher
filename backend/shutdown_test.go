@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -439,4 +441,62 @@ func TestShutdownStopsWaitingWhenDeadlineExpires(t *testing.T) {
 
 	close(releaseWorker)
 	verificationWG.Wait()
+}
+
+func TestWatchForForcedShutdownCancelsWorkersOnSecondSignal(t *testing.T) {
+	signalChannel := make(chan os.Signal, 1)
+	shutdownCtx, cancelShutdown := context.WithCancel(context.Background())
+	defer cancelShutdown()
+	workerCtx, cancelWorkers := context.WithCancel(context.Background())
+	defer cancelWorkers()
+	shutdownComplete := make(chan struct{})
+
+	done := make(chan struct{})
+	go func() {
+		watchForForcedShutdown(signalChannel, shutdownCtx, shutdownComplete, cancelWorkers, cancelShutdown)
+		close(done)
+	}()
+	signalChannel <- syscall.SIGTERM
+
+	select {
+	case <-workerCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("second shutdown signal did not cancel workers")
+	}
+	select {
+	case <-shutdownCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("second shutdown signal did not cancel shutdown context")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("forced shutdown watcher did not exit")
+	}
+}
+
+func TestWatchForForcedShutdownCancelsWorkersWhenDeadlineExpires(t *testing.T) {
+	signalChannel := make(chan os.Signal, 1)
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancelShutdown()
+	workerCtx, cancelWorkers := context.WithCancel(context.Background())
+	defer cancelWorkers()
+	shutdownComplete := make(chan struct{})
+
+	done := make(chan struct{})
+	go func() {
+		watchForForcedShutdown(signalChannel, shutdownCtx, shutdownComplete, cancelWorkers, cancelShutdown)
+		close(done)
+	}()
+
+	select {
+	case <-workerCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("shutdown deadline did not cancel workers")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("deadline shutdown watcher did not exit")
+	}
 }

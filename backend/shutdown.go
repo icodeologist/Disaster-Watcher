@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
 	"sync"
 )
 
@@ -22,6 +24,21 @@ type shutdownPipeline struct {
 	recoveryWorkers *sync.WaitGroup
 	stages          []drainStage
 	closeAfterDrain chanCloser
+}
+
+func watchForForcedShutdown(signalChannel <-chan os.Signal, shutdownCtx context.Context, shutdownComplete <-chan struct{}, cancelWorkers context.CancelFunc, cancelShutdown context.CancelFunc) {
+	select {
+	case secondSignal, ok := <-signalChannel:
+		if !ok {
+			return
+		}
+		slog.Warn("Received second shutdown signal; stopping immediately", "signal", secondSignal)
+		cancelWorkers()
+		cancelShutdown()
+	case <-shutdownCtx.Done():
+		cancelWorkers()
+	case <-shutdownComplete:
+	}
 }
 
 // shutdownGracefully first stops HTTP intake and waits for active handlers.
