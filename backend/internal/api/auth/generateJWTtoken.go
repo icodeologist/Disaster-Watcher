@@ -1,11 +1,13 @@
 package auth
 
 import (
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/icodeologist/disasterwatch/internal/models"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
+
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/icodeologist/disasterwatch/internal/models"
 )
 
 func GenerateAndSignJwtToken(user models.User) (string, error) {
@@ -15,11 +17,14 @@ func GenerateAndSignJwtToken(user models.User) (string, error) {
 		"username": user.UserName,
 		"exp":      time.Now().Add(time.Hour * 24).Unix(),
 	})
-	jwtToken, err := token.SignedString([]byte(os.Getenv("SECRET")))
+	secret := os.Getenv("SECRET")
+	if secret == "" {
+		return "", fmt.Errorf("JWT secret cannot be empty")
+	}
+	jwtToken, err := token.SignedString([]byte(secret))
 	if err != nil {
 		slog.Error("Failed to sign the jwt token", "error", err)
 		return "", err
 	}
 	return jwtToken, nil
-
 }

@@ -3,6 +3,8 @@ package auth
 import (
 	"fmt"
 	"log"
+	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"strings"
@@ -38,7 +40,11 @@ func AuthCheckingMiddleware(c *gin.Context) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("Unexpected signing method :%v", token.Header["alg"])
 		}
-		return []byte(os.Getenv("SECRET")), nil
+		secret := os.Getenv("SECRET")
+		if secret == "" {
+			return nil, fmt.Errorf("Empty Secret :%v", secret)
+		}
+		return []byte(secret), nil
 	})
 
 	if err != nil || !token.Valid {
@@ -53,27 +59,51 @@ func AuthCheckingMiddleware(c *gin.Context) {
 		c.Abort()
 		return
 	}
-	if float64(time.Now().Unix()) > claims["exp"].(float64) {
+	userID, ok := claims["id"].(float64)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		c.Abort()
+		return
+	}
+	expirationTime, ok := claims["exp"].(float64)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		c.Abort()
+		return
+	}
+
+	if float64(time.Now().Unix()) >= expirationTime {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "token expired"})
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
 	var currentUser models.User
-	database.DB.Where("ID=?", claims["id"]).Find(&currentUser)
+	log.Printf("USerID : %v\n", userID)
+	if userID < 1 || userID != math.Trunc(userID) || userID > float64(^uint(0)) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		c.Abort()
+		return
+	}
+	userIDValue := uint(userID)
+	fetchErr := database.DB.Where("ID=?", userIDValue).Find(&currentUser).Error
+	if fetchErr != nil {
+		slog.Error("failed to load authenticated user", "error", fetchErr)
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Success: false,
+			Error: models.Error{
+				ErrorCode: "INTERNAL_ERROR",
+				Message:   "unable to authenticate request",
+			},
+		})
+		c.Abort()
+		return
+	}
 	if currentUser.ID == 0 {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
-
-	currentUserIDinFloat, ok := claims["id"].(float64)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-	// set the current authenticated user
-	c.Set("userId", uint(currentUserIDinFloat))
+	c.Set("userId", userIDValue)
 	c.Set("currentUserEmail", currentUser.Email)
 	c.Set("currentUser", currentUser)
 	c.Next()
