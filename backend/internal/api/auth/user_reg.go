@@ -6,8 +6,10 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	api "github.com/icodeologist/disasterwatch/internal/api"
 	database "github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
 	"github.com/icodeologist/disasterwatch/internal/utils"
@@ -17,7 +19,7 @@ import (
 // Validate the request, cache the location, and store a new user.
 func UserRegistration(c *gin.Context) {
 	var input models.UserRegistrationRequest
-	if err := c.ShouldBindJSON(&input); err != nil || input.Validate() != nil {
+	if err := api.BindJSON(c, &input); err != nil || input.Validate() != nil {
 		writeInvalidInput(c)
 		return
 	}
@@ -48,10 +50,10 @@ func UserRegistration(c *gin.Context) {
 	}
 
 	user := models.User{
-		UserName: input.Username,
+		UserName: strings.TrimSpace(input.Username),
 		Password: hashedPassword,
-		Email:    input.Email,
-		Location: input.Location,
+		Email:    strings.TrimSpace(input.Email),
+		Location: strings.TrimSpace(input.Location),
 	}
 	if err := utils.CachedUserCords(c.Request.Context(), &user); err != nil {
 		slog.Error("failed to cache user location", "error", err)
@@ -90,13 +92,13 @@ func UserRegistration(c *gin.Context) {
 // Check the credentials and return a signed token.
 func UserLogin(c *gin.Context) {
 	var input models.UserLoginRequest
-	if err := c.ShouldBindJSON(&input); err != nil || input.Validate() != nil {
+	if err := api.BindJSON(c, &input); err != nil || input.Validate() != nil {
 		writeInvalidInput(c)
 		return
 	}
 
 	var user models.User
-	lookup := database.DB.Where("email = ?", input.Email).First(&user)
+	lookup := database.DB.Where("email = ?", strings.TrimSpace(input.Email)).First(&user)
 	if errors.Is(lookup.Error, gorm.ErrRecordNotFound) || user.ID == 0 {
 		c.JSON(http.StatusNotFound, models.ErrorResponse{
 			Success: false,

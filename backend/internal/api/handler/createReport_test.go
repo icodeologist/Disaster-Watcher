@@ -46,10 +46,7 @@ func TestCreateReportRollsBackWhenJobCreationFails(t *testing.T) {
 		"description":"Water is entering homes",
 		"location":"Central Station",
 		"category":"flood",
-		"priority":"high",
-		"is-cached":true,
-		"latitude":12.9,
-		"longitude":77.6
+		"priority":"high"
 	}`))
 	ginContext.Set("userId", uint(7))
 	server := &Server{
@@ -102,10 +99,7 @@ func TestCreateReportRollsBackWhenReportCreationFails(t *testing.T) {
 		"description":"Water is entering homes",
 		"location":"Central Station",
 		"category":"flood",
-		"priority":"high",
-		"is-cached":true,
-		"latitude":12.9,
-		"longitude":77.6
+		"priority":"high"
 	}`))
 	ginContext.Set("userId", uint(7))
 	server := &Server{
@@ -150,5 +144,30 @@ func TestCreateReportRejectsInvalidInputBeforeDatabaseAccess(t *testing.T) {
 	}
 	if strings.Contains(response.Body.String(), "volcano") || strings.Contains(response.Body.String(), "sql") {
 		t.Fatalf("response leaked request or infrastructure details: %s", response.Body.String())
+	}
+}
+
+func TestCreateReportRejectsServerOwnedFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	response := httptest.NewRecorder()
+	ginContext, _ := gin.CreateTestContext(response)
+	ginContext.Request = httptest.NewRequest(http.MethodPost, "/reports", strings.NewReader(`{
+		"title":"Flood warning",
+		"description":"Water is entering homes",
+		"location":"Central Station",
+		"category":"flood",
+		"priority":"high",
+		"status":"verified",
+		"userid":999
+	}`))
+
+	server := &Server{VerificationChannel: make(chan models.VerificationMessage, 1)}
+	server.CreateReport(ginContext)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	if strings.Contains(response.Body.String(), "status") || strings.Contains(response.Body.String(), "userid") {
+		t.Fatalf("response exposed server-owned fields: %s", response.Body.String())
 	}
 }

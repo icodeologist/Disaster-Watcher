@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	api "github.com/icodeologist/disasterwatch/internal/api"
 	database "github.com/icodeologist/disasterwatch/internal/db"
 	"github.com/icodeologist/disasterwatch/internal/models"
 	"github.com/icodeologist/disasterwatch/internal/utils"
@@ -18,7 +19,7 @@ import (
 
 func (s *Server) CreateReport(c *gin.Context) {
 	var input models.CreateReportRequest
-	if err := c.ShouldBindJSON(&input); err != nil || input.Validate() != nil {
+	if err := api.BindJSON(c, &input); err != nil || input.Validate() != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Success: false,
 			Error: models.Error{
@@ -29,9 +30,9 @@ func (s *Server) CreateReport(c *gin.Context) {
 		return
 	}
 	report := models.Report{
-		Title:       input.Title,
-		Description: input.Description,
-		Location:    input.Location,
+		Title:       strings.TrimSpace(input.Title),
+		Description: strings.TrimSpace(input.Description),
+		Location:    strings.TrimSpace(input.Location),
 		Category:    strings.ToLower(strings.TrimSpace(input.Category)),
 		Priority:    strings.ToLower(strings.TrimSpace(input.Priority)),
 	}
